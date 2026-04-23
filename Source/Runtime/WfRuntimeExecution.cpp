@@ -1260,7 +1260,7 @@ WfRuntimeThreadContext
 				{
 					if (ex.GetInfo())
 					{
-						RaiseException(ex.GetInfo());
+						RaiseException(ex.Message(), ex.GetInfo(), ex.IsFatal());
 					}
 					else
 					{

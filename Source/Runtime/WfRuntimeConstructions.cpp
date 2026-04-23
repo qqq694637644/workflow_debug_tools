@@ -44,7 +44,16 @@ WfRuntimeLambda
 				context.ExecuteToEnd();
 				if (context.status != WfRuntimeExecutionStatus::Finished)
 				{
-					throw WfRuntimeException(context.exceptionInfo);
+					auto message = context.exceptionMessage;
+					if (message == L"")
+					{
+						message = context.exceptionInfo ? context.exceptionInfo->message : L"";
+					}
+					if (context.exceptionInfo)
+					{
+						throw WfRuntimeException(message, context.exceptionInfo, context.status == WfRuntimeExecutionStatus::FatalError);
+					}
+					throw WfRuntimeException(message, context.status == WfRuntimeExecutionStatus::FatalError);
 				}
 
 				Value result;

@@ -444,14 +444,19 @@ WfRuntimeThreadContext
 
 			WfRuntimeThreadContextError WfRuntimeThreadContext::RaiseException(const WString& exception, bool fatalError, bool skipDebugger)
 			{
-				auto info = Ptr(new WfRuntimeExceptionInfo(exception, fatalError));
-				return RaiseException(info, skipDebugger);
+				return RaiseException(exception, Ptr<WfRuntimeExceptionInfo>(), fatalError, skipDebugger);
 			}
 
-			WfRuntimeThreadContextError WfRuntimeThreadContext::RaiseException(Ptr<WfRuntimeExceptionInfo> info, bool skipDebugger)
+			WfRuntimeThreadContextError WfRuntimeThreadContext::RaiseException(const WString& exception, Ptr<WfRuntimeExceptionInfo> info, bool fatalError, bool skipDebugger)
 			{
+				if (!info)
+				{
+					info = Ptr(new WfRuntimeExceptionInfo(exception, fatalError));
+				}
+
 				exceptionInfo = info;
-				status = info->fatal ? WfRuntimeExecutionStatus::FatalError : WfRuntimeExecutionStatus::RaisedException;
+				exceptionMessage = exception;
+				status = fatalError ? WfRuntimeExecutionStatus::FatalError : WfRuntimeExecutionStatus::RaisedException;
 
 				if (info->callStack.Count() == 0)
 				{
@@ -482,7 +487,9 @@ WfRuntimeThreadContext
 								{
 									if (!callback->WaitForContinue())
 									{
-										RaiseException(L"Internal error: Debugger stopped the program.", true, true);
+										// 调试器主动停止程序时，保留原始异常信息，只更换对外消息。
+										exceptionMessage = L"Internal error: Debugger stopped the program.";
+										status = WfRuntimeExecutionStatus::FatalError;
 									}
 								}
 							}
@@ -491,6 +498,11 @@ WfRuntimeThreadContext
 				}
 
 				return WfRuntimeThreadContextError::Success;
+			}
+
+			WfRuntimeThreadContextError WfRuntimeThreadContext::RaiseException(Ptr<WfRuntimeExceptionInfo> info, bool skipDebugger)
+			{
+				return RaiseException(info->message, info, info->fatal, skipDebugger);
 			}
 
 			WfRuntimeThreadContextError WfRuntimeThreadContext::LoadStackValue(vint stackItemIndex, reflection::description::Value& value)

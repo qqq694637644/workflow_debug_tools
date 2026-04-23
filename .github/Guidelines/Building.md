@@ -1,42 +1,38 @@
-# Building a Solution
+# 构建工程
 
-- Only run `copilotBuild.ps1` to build a solution.
-- DO NOT use msbuild by yourself.
-- The script builds all projects in a solution.
+- 默认使用 `copilotBuild.py` 编译目标项目，优先走增量 `Build`，不要手动调用 `msbuild`。
+- 这个脚本会编译单个单元测试项目，默认是 `RuntimeTest`，并把产物同步到 `Test/UnitTest/x64/Debug`，供后续执行脚本直接使用。
+- `copilotBuild.ps1` 保留为旧入口，不作为默认构建方式。
 
-## Executing copilotBuild.ps1
+## 执行 `copilotBuild.py`
 
-Before building, ensure the debugger has stopped.
-If there is any error message, it means the debugger is not alive, it is good.
+在编译之前，先确保调试器已经停止。
+如果停止脚本返回“调试器不存在”之类的报错，说明当前没有活跃调试会话，可以继续。
 
 ```
 & REPO-ROOT\.github\Scripts\copilotDebug_Stop.ps1
 ```
 
-And then run this script to build the solution:
+然后在 `SOLUTION-ROOT` 下执行 Python 编译脚本：
 
 ```
 cd SOLUTION-ROOT
-& REPO-ROOT\.github\Scripts\copilotBuild.ps1
+python REPO-ROOT\.github\Scripts\copilotBuild.py
 ```
 
-## Ensure Target Configuration
+## 目标配置
 
-`-Configuration` and `-Platform` arguments are available to specify the target configuration:
-- `-Configuration` could be `Debug` (default) or `Release`.
-- `-Platform` could be `x64` (default) or `Win32`
-- Pick the default option (omit both arguments) when there is no specific requirements.
+`copilotBuild.py` 支持这些参数：
+- `--configuration` 可选 `Debug`（默认）或 `Release`。
+- `--platform` 可选 `x64`（默认）或 `Win32`。
+- `--project` 可指定要编译的项目名，默认 `RuntimeTest`。
+- `--rebuild` 会显式执行 `Rebuild`，默认不使用，以便保持增量编译。
 
-## The Correct Way to Read Compiler Result
+## 如何读取编译结果
 
-- The only source of trust is the raw output of the compiler.
-- Wait for the script to finish before reading the log file.
-  - DO NOT need to read the output from the script.
-  - Building takes a long time. DO NOT hurry.
-  - When the script finishes, the result is saved to `REPO-ROOT/.github/Scripts/Build.log`.
-  - A temporary file `Build.log.unfinished` is created during building. It will be automatically deleted as soon as the building finishes. If you see this file, it means the building is not finished yet.
-- When build succeeds, the last several lines of `Build.log` indicates the number of warnings and errors in the following pattern:
-  - "Build succeeded."
-  - "0 Warning(s)"
-  - "0 Error(s)"
-- DO NOT delete the log file by yourself.
+- 可信来源只有编译器的原始输出。
+- 等脚本执行结束后再看日志。
+  - 不需要实时看脚本回显。
+  - 编译时间可能较长，不要催促。
+  - 编译结束后，脚本会把编译结果同步到 `Test/UnitTest/x64/Debug`。
+- `copilotBuild.py` 执行成功时，控制台会输出“编译完成，输出已同步。”。

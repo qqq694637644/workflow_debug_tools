@@ -168,6 +168,13 @@ RuntimeException
 				{
 				}
 
+				WfRuntimeException(const WString& _message, Ptr<WfRuntimeExceptionInfo> _info, bool _fatal)
+					:reflection::description::TypeDescriptorException(_message)
+					, info(_info)
+					, fatal(_fatal)
+				{
+				}
+
 				WfRuntimeException(const WString& _message, bool _fatal)
 					:reflection::description::TypeDescriptorException(_message)
 					, fatal(_fatal)
@@ -252,6 +259,8 @@ RuntimeThreadContext
 
 				Ptr<WfRuntimeGlobalContext>		globalContext;
 				Ptr<WfRuntimeExceptionInfo>		exceptionInfo;
+				// 对外抛出的异常消息。调试器把脚本异常转成致命停止时，这里会和 exceptionInfo->message 不同。
+				WString							exceptionMessage;
 				VariableList					stack;
 				StackFrameList					stackFrames;
 				TrapFrameList					trapFrames;
@@ -270,6 +279,7 @@ RuntimeThreadContext
 				WfRuntimeThreadContextError		PushValue(const reflection::description::Value& value);
 				WfRuntimeThreadContextError		PopValue(reflection::description::Value& value);
 				WfRuntimeThreadContextError		RaiseException(const WString& exception, bool fatalError, bool skipDebugger = false);
+				WfRuntimeThreadContextError		RaiseException(const WString& exception, Ptr<WfRuntimeExceptionInfo> info, bool fatalError, bool skipDebugger = false);
 				WfRuntimeThreadContextError		RaiseException(Ptr<WfRuntimeExceptionInfo> info, bool skipDebugger = false);
 
 				WfRuntimeThreadContextError		LoadStackValue(vint stackItemIndex, reflection::description::Value& value);

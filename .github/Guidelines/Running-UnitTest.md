@@ -7,6 +7,8 @@
 
 `PROJECT-NAME` is the name of the project.
 
+在运行单测之前，先用 `copilotBuild.py` 完成对应项目的增量编译。
+
 Before testing, ensure the debugger has stopped.
 If there is any error message, it means the debugger is not alive, it is good.
 
