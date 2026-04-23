@@ -1,0 +1,55 @@
+module test;
+using system::*;
+using test::*;
+
+var result : string = "";
+
+func Log(note : string):void
+{
+	if (result != "")
+	{
+		result = result & ", ";
+	}
+	result = result & note;
+	return;
+	result = "";
+}
+
+namespace A
+{
+	namespace B
+	{
+		static
+		{
+			Log("A::B");
+		}
+	}
+
+	static
+	{
+		Log("A(0)");
+	}
+
+	namespace C
+	{
+		static
+		{
+			Log("A::C");
+		}
+	}
+
+	static
+	{
+		Log("A(1)");
+	}
+}
+
+func main():string
+{
+	return result;
+}
+
+static
+{
+	Log("::");
+}

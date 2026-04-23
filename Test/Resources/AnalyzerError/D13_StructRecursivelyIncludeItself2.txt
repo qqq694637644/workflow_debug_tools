@@ -1,0 +1,18 @@
+module test;
+
+enum E
+{
+	x = 0,
+}
+
+struct A
+{
+	x : B;
+	y : int;
+	z : E;
+}
+
+struct B
+{
+	x : A;
+}

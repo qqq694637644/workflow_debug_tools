@@ -1,0 +1,7 @@
+module test;
+using test::*;
+
+func main():void
+{
+	var x = {x:1 x:2} of Point;
+}

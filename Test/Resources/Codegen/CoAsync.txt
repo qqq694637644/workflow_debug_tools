@@ -1,0 +1,48 @@
+module test;
+using system::*;
+using test::*;
+using CoAsync_types::*;
+
+var s = "";
+
+namespace CoAsync_types
+{
+	$interface IStringAsync : Async<string>;
+}
+
+func GetStringAsync(x : int) : IStringAsync^
+${
+	s = $"$(s)[$(x)]";
+	return cast string x;
+}
+
+func GetStringAsync2(x : int) : IStringAsync^
+{
+	var future = Future::Create();
+	AsyncScheduler::GetSchedulerForCurrentThread().ExecuteInBackground(func():void
+	{
+		s = $"$(s)[$(x)]";
+		future.Promise.SendResult(cast string x);
+	});
+	
+	return new IStringAsync^(using future of Async^);
+}
+
+func GetMultipleString() : void
+$Async{
+	for(i in range[0, 1])
+	{
+		var x = $Await GetStringAsync(i);
+		s = $"$(s)[+$(x)]";
+		var y = $Await GetStringAsync2(i);
+		s = $"$(s)[-$(y)]";
+		$Await Async::Delay(0);
+		s = $"$(s)!";
+	}
+}
+
+func main():string
+{
+	SyncScheduler::Run([GetMultipleString()]);
+	return s;
+}

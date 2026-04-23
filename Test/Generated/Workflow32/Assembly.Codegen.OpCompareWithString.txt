@@ -1,0 +1,90 @@
+﻿========================================================
+Global Variables:
+========================================================
+
+========================================================
+Functions:
+========================================================
+main (2 .. 35)
+    Arguments:
+    Captured Variables:
+    Local Variables:
+
+<initialize> (0 .. 1)
+    Arguments:
+    Captured Variables:
+    Local Variables:
+
+========================================================
+Instructions:
+========================================================
+0    :     LoadValue     : value = <null>
+1    :     Return        
+//  "1"
+2    :     LoadValue     : value = <String, 1>
+//  1
+3    :     LoadValue     : value = <I4, 1>
+//  1
+4    :     ConvertToType : flag = BoxedValue, typeDescriptor = system::String
+//  ("1" == 1)
+5    :     CompareValue  
+//  ("1" == 1)
+6    :     ConvertToType : flag = BoxedValue, typeDescriptor = system::String
+//  ", "
+7    :     LoadValue     : value = <String, , >
+//  (("1" == 1) & ", ")
+8    :     OpConcat      
+//  "1"
+9    :     LoadValue     : value = <String, 1>
+//  2
+10   :     LoadValue     : value = <I4, 2>
+//  2
+11   :     ConvertToType : flag = BoxedValue, typeDescriptor = system::String
+//  ("1" == 2)
+12   :     CompareValue  
+//  ("1" == 2)
+13   :     ConvertToType : flag = BoxedValue, typeDescriptor = system::String
+//  ((("1" == 1) & ", ") & ("1" == 2))
+14   :     OpConcat      
+//  ", "
+15   :     LoadValue     : value = <String, , >
+//  (((("1" == 1) & ", ") & ("1" == 2)) & ", ")
+16   :     OpConcat      
+//  "1"
+17   :     LoadValue     : value = <String, 1>
+//  "1"
+18   :     LoadValue     : value = <String, 1>
+//  "1"
+19   :     ConvertToType : flag = BoxedValue, typeDescriptor = system::Locale
+//  (cast (Locale) "1")
+20   :     ConvertToType : flag = BoxedValue, typeDescriptor = system::String
+//  ("1" == (cast (Locale) "1"))
+21   :     CompareValue  
+//  ("1" == (cast (Locale) "1"))
+22   :     ConvertToType : flag = BoxedValue, typeDescriptor = system::String
+//  ((((("1" == 1) & ", ") & ("1" == 2)) & ", ") & ("1" == (cast (Locale) "1")))
+23   :     OpConcat      
+//  ", "
+24   :     LoadValue     : value = <String, , >
+//  (((((("1" == 1) & ", ") & ("1" == 2)) & ", ") & ("1" == (cast (Locale) "1"))) & ", ")
+25   :     OpConcat      
+//  "1"
+26   :     LoadValue     : value = <String, 1>
+//  "2"
+27   :     LoadValue     : value = <String, 2>
+//  "2"
+28   :     ConvertToType : flag = BoxedValue, typeDescriptor = system::Locale
+//  (cast (Locale) "2")
+29   :     ConvertToType : flag = BoxedValue, typeDescriptor = system::String
+//  ("1" == (cast (Locale) "2"))
+30   :     CompareValue  
+//  ("1" == (cast (Locale) "2"))
+31   :     ConvertToType : flag = BoxedValue, typeDescriptor = system::String
+//  ((((((("1" == 1) & ", ") & ("1" == 2)) & ", ") & ("1" == (cast (Locale) "1"))) & ", ") & ("1" == (cast (Locale) "2")))
+32   :     OpConcat      
+//  return ((((((("1" == 1) & ", ") & ("1" == 2)) & ", ") & ("1" == (cast (Locale) "1"))) & ", ") & ("1" == (cast (Locale) "2")));
+33   :     Return        
+//  func main() : (string)
+34   :     LoadValue     : value = <null>
+//  func main() : (string)
+35   :     Return        

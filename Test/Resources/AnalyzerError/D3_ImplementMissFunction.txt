@@ -1,0 +1,16 @@
+module test;
+using system::*;
+
+func main():void
+{
+	new Subscription^
+	{
+		override func Open() : bool
+		{
+		}
+
+		override func Close() : bool
+		{
+		}
+	};
+}

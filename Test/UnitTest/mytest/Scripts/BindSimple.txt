@@ -1,0 +1,82 @@
+﻿module test;
+using system::*;
+
+class ObservableValue2
+{
+	var value : int = 0;
+	event ValueChanged(int, int);
+
+	new(_value : int)
+	{
+		value = _value;
+	}
+
+	func GetValue(): int
+	{
+		return value;
+	}
+
+	func SetValue(newValue : int): void
+	{
+		var oldValue = value;
+		value = newValue;
+		ValueChanged(oldValue, newValue);
+	}
+
+	prop Value : int {GetValue, SetValue : ValueChanged}
+}
+
+class OuterClass
+{
+	class Base
+	{
+		var subscription : Subscription^ = null;
+		var s : string = "";
+
+		func Initialize(derived : Derived*) : void
+		{
+			subscription = bind(
+				derived.x.observe(Value on ValueChanged) +
+				derived.y.observe(Value on ValueChanged) +
+				derived.z.observe(Value on ValueChanged)
+				);
+			subscription.Open();
+			attach(subscription.ValueChanged,
+				func (value : object) : void
+				{
+					s = $"$(s)[$(cast int value)]";
+				});
+		}
+	}
+}
+
+@cpp:Friend(typeof(OuterClass))
+class Derived : OuterClass::Base
+{
+	@cpp:Protected
+	var x : ObservableValue2^ = new ObservableValue2^(0);
+	@cpp:Protected
+	var y : ObservableValue2^ = new ObservableValue2^(0);
+	@cpp:Protected
+	var z : ObservableValue2^ = new ObservableValue2^(0);
+
+	new()
+	{
+		Initialize(this);
+	}
+
+	func Execute() : void
+	{
+		x.Value = 10;
+		y.Value = 20;
+		z.Value = 30;
+		subscription.Close();
+	}
+}
+
+func main() : string
+{
+	var derived = new Derived^();
+	derived.Execute();
+	return derived.s;
+}

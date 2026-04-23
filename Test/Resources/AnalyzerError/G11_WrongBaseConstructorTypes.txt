@@ -1,0 +1,10 @@
+module test;
+
+class A
+{
+	new() :B() {}
+}
+
+class B
+{
+}

@@ -1,0 +1,125 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{3737dfa1-8c6c-457e-b940-c5d3156c7eaa}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_CheckScopes_CycleDependency.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_BuildGlobalNameFromModules.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_BuildGlobalNameFromTypeDescriptors.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_BuildScope.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_CheckScope_DuplicatedSymbol.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_CheckScope_SymbolType.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_CompleteScope.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ContextFreeDesugar.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_Errors.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ExpandBindExpression.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ExpandMixinCastExpression.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ExpandNewCoroutineExpression.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ExpandStateMachine.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ExpandStatement.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_GenerateRpc.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_Misc.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_SearchOrderedName.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_TypeInfo.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateRPC.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateScopeName.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateSemantic.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateSemantic_Declaration.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateSemantic_Expression.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateSemantic_Statement.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateStructure.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateStructure_Declaration.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateStructure_Expression.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateStructure_Statement.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer_ValidateStructure_Type.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_AssignClassDeclsToFiles.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_Class.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_Collect.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_Expression.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_File.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_GenerateCppFiles.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_Statement.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_WriteClass.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_WriteEnum.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_WriteFunctionHeader.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_WriteGlobal.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_WriteLambda.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_WriteReflection.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp_WriteStruct.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfMergeCpp.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Emitter\WfEmitter.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Emitter\WfEmitter_Assembly.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Emitter\WfEmitter_Declaration.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Emitter\WfEmitter_Expression.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Emitter\WfEmitter_Metadata.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Emitter\WfEmitter_Statement.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst.cpp">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Builder.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Copy.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Empty.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Json.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Traverse.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowParser.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\Workflow_Assembler.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\Workflow_Lexer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\WfExpression.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Analyzer\WfAnalyzer.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfCpp.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Cpp\WfMergeCpp.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Emitter\WfEmitter.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Builder.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Copy.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Empty.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Json.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowAst_Traverse.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\WorkflowParser.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\Workflow_Assembler.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Generated\Workflow_Lexer.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\WfExpression.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\Ast.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\Decls.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\DeclsClass.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\DeclsEnum.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\DeclsStruct.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\DeclsVirtual.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\Expressions.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\ExpressionsVirtual.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\Module.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\Statements.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\StatementsCoroutine.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\StatementsVirtual.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Ast\Types.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Lexer.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Syntax\Decls.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Syntax\Expressions.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Syntax\Module.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Syntax\Statements.txt" />
+    <Text Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Syntax\Types.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Xml Include="$(MSBuildThisFileDirectory)..\..\..\Source\Parser\Syntax\Parser.xml" />
+  </ItemGroup>
+</Project>

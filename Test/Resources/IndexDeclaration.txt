@@ -1,0 +1,11 @@
+HelloWorld
+Function
+Variable
+Class
+Interface
+Namespace
+NestedNamespace
+Struct
+Enum
+Coroutine
+StateMachine

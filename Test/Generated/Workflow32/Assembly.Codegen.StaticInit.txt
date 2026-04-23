@@ -1,0 +1,125 @@
+﻿========================================================
+Global Variables:
+========================================================
+result
+
+========================================================
+Functions:
+========================================================
+Log (19 .. 45)
+    Arguments:
+        note
+    Captured Variables:
+    Local Variables:
+
+main (46 .. 49)
+    Arguments:
+    Captured Variables:
+    Local Variables:
+
+<initialize> (0 .. 18)
+    Arguments:
+    Captured Variables:
+    Local Variables:
+
+========================================================
+Instructions:
+========================================================
+//  ""
+0    :     LoadValue     : value = <String, >
+//  var result : string = "";
+1    :     StoreGlobalVar: var = 0(result)
+//  "A::B"
+2    :     LoadValue     : value = <String, A::B>
+//  Log("A::B")
+3    :     Invoke        : func = 0(Log), stackPatternCount = 1
+//  Log("A::B");
+4    :     Pop           
+//  "A(0)"
+5    :     LoadValue     : value = <String, A(0)>
+//  Log("A(0)")
+6    :     Invoke        : func = 0(Log), stackPatternCount = 1
+//  Log("A(0)");
+7    :     Pop           
+//  "A::C"
+8    :     LoadValue     : value = <String, A::C>
+//  Log("A::C")
+9    :     Invoke        : func = 0(Log), stackPatternCount = 1
+//  Log("A::C");
+10   :     Pop           
+//  "A(1)"
+11   :     LoadValue     : value = <String, A(1)>
+//  Log("A(1)")
+12   :     Invoke        : func = 0(Log), stackPatternCount = 1
+//  Log("A(1)");
+13   :     Pop           
+//  "::"
+14   :     LoadValue     : value = <String, ::>
+//  Log("::")
+15   :     Invoke        : func = 0(Log), stackPatternCount = 1
+//  Log("::");
+16   :     Pop           
+17   :     LoadValue     : value = <null>
+18   :     Return        
+//  result
+19   :     LoadGlobalVar : var = 0(result)
+//  ""
+20   :     LoadValue     : value = <String, >
+//  (result != "")
+21   :     CompareValue  
+//  (result != "")
+22   :     OpNot         : type = Bool
+//  if ((result != ""))
+23   :     OpNot         : type = Bool
+//  if ((result != ""))
+24   :     JumpIf        : label = 32
+//  result
+25   :     LoadGlobalVar : var = 0(result)
+//  ", "
+26   :     LoadValue     : value = <String, , >
+//  (result & ", ")
+27   :     OpConcat      
+//  (result = (result & ", "))
+28   :     Duplicate     : stackPatternCount = 0
+//  (result = (result & ", "))
+29   :     StoreGlobalVar: var = 0(result)
+//  (result = (result & ", "));
+30   :     Pop           
+//  if ((result != ""))
+31   :     Jump          : label = 32
+//  result
+32   :     LoadGlobalVar : var = 0(result)
+//  note
+33   :     LoadLocalVar  : var = 0(note)
+//  (result & note)
+34   :     OpConcat      
+//  (result = (result & note))
+35   :     Duplicate     : stackPatternCount = 0
+//  (result = (result & note))
+36   :     StoreGlobalVar: var = 0(result)
+//  (result = (result & note));
+37   :     Pop           
+//  return;
+38   :     LoadValue     : value = <null>
+//  return;
+39   :     Return        
+//  ""
+40   :     LoadValue     : value = <String, >
+//  (result = "")
+41   :     Duplicate     : stackPatternCount = 0
+//  (result = "")
+42   :     StoreGlobalVar: var = 0(result)
+//  (result = "");
+43   :     Pop           
+//  func Log(note : string) : (void)
+44   :     LoadValue     : value = <null>
+//  func Log(note : string) : (void)
+45   :     Return        
+//  result
+46   :     LoadGlobalVar : var = 0(result)
+//  return result;
+47   :     Return        
+//  func main() : (string)
+48   :     LoadValue     : value = <null>
+//  func main() : (string)
+49   :     Return        

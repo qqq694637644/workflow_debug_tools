@@ -1,0 +1,9 @@
+new Delegate
+{
+    func Something(x : int) : string {}
+
+    @cpp:Good
+    @cpp:Better
+    @cpp:Best
+    override func Invoke():void {}
+}

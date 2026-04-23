@@ -1,0 +1,8 @@
+module test;
+using test::*;
+
+func main():void
+{
+	var a = {x:10 y:20} of Point;
+	a.x=2;
+}

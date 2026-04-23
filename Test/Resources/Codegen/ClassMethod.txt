@@ -1,0 +1,69 @@
+module test;
+using system::*;
+
+class Methods
+{
+	var x : int = 0;
+
+	new()
+	{
+	}
+
+	new(_x : int)
+	{
+		x = _x;
+		if(this.x != x)
+		{
+			raise "The \"this\" expression is not correctly implemented.";
+		}
+	}
+
+	func GetX() : int
+	{
+		if(this.x != x)
+		{
+			raise "The \"this\" expression is not correctly implemented.";
+		}
+		return x;
+	}
+
+	func SetX(_x : int) : void
+	{
+		if(x != _x)
+		{
+			x = _x;
+			XChanged();
+		}
+	}
+
+	event XChanged();
+
+	prop X : int {GetX, SetX : XChanged}
+}
+
+var s = "";
+
+func main():string
+{
+	{
+		var a = new Methods^();
+		s = s & $"[$(a.x)]";
+	}
+	{
+		var a = new Methods^(100);
+		s = s & $"[$(a.x)]";
+	}
+	{
+		var a = new Methods^(1);
+		var handler = attach(a.XChanged, func():void{s = s & $"[$(a.X)]";});
+
+		a.X = a.X + 1;
+		a.X = a.X - 1;
+		a.X = a.X;
+
+		detach(a.XChanged, handler);
+		a.X = 100;
+		s = s & $"[$(a.X)]";
+	}
+	return s;
+}

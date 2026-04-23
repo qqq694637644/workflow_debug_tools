@@ -1,0 +1,12 @@
+module test;
+
+class A
+{
+	static func B() : void
+	{
+	}
+
+	class B
+	{
+	}
+}

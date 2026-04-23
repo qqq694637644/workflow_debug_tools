@@ -1,0 +1,123 @@
+module test;
+using test::*;
+using system::*;
+using calculator::*;
+
+namespace calculator
+{
+	@cpp:File("WorkflowAttributes_Expression")
+	class Expression
+	{
+		@cpp:UserImpl
+		func Print() : string
+		{
+			return ::Print(cast Expression^ this);
+		}
+
+		@cpp:UserImpl
+		func Evaluate() : int
+		{
+			return ::Evaluate(cast Expression^ this);
+		}
+	}
+	
+	class NumberExpression : Expression
+	{
+		prop Value : int = 0 {const, not observe}
+
+		new (_value : int)
+		{
+			SetValue(_value);
+		}
+	}
+	
+	class BinaryExpression : Expression
+	{
+		enum BinaryOperator
+		{
+			Add = 0,
+			Sub = 1,
+			Mul = 2,
+			Div = 3,
+		}
+		
+		prop Operator : BinaryOperator	= Add	{const, not observe}
+		prop Left : Expression^			= null	{const, not observe}
+		prop Right : Expression^		= null	{const, not observe}
+
+		new (_left : Expression^, _op : BinaryOperator, _right : Expression^)
+		{
+			SetLeft(_left);
+			SetOperator(_op);
+			SetRight(_right);
+		}
+	}
+}
+
+func Print(expr : Expression^) : string
+{
+	if (var ne : NumberExpression^ = expr)
+	{
+		return cast string ne.Value;
+	}
+	else if (var be : BinaryExpression^ = expr)
+	{
+		var op = "";
+		switch(be.Operator)
+		{
+		case Add: { op = "+"; }
+		case Sub: { op = "-"; }
+		case Mul: { op = "*"; }
+		case Div: { op = "/"; }
+		}
+		return $"($(Print(be.Left)) $(op) $(Print(be.Right)))";
+	}
+	else
+	{
+		raise "Unrecognized expression type.";
+	}
+}
+
+func Evaluate(expr : Expression^) : int
+{
+	if (var ne : NumberExpression^ = expr)
+	{
+		return ne.Value;
+	}
+	else if (var be : BinaryExpression^ = expr)
+	{
+		var left = Evaluate(be.Left);
+		var right = Evaluate(be.Right);
+		switch(be.Operator)
+		{
+		case Add: { return left + right; }
+		case Sub: { return left - right; }
+		case Mul: { return left * right; }
+		case Div: { return left / right; }
+		}
+		raise "Unrecognized binary operator.";
+	}
+	else
+	{
+		raise "Unrecognized expression type.";
+	}
+}
+
+func main():string
+{
+	var expr = new BinaryExpression^(
+		new BinaryExpression^(
+			new NumberExpression^(1),
+			Add,
+			new NumberExpression^(2)
+			),
+		Mul,
+		new BinaryExpression^(
+			new NumberExpression^(3),
+			Add,
+			new NumberExpression^(4)
+			)
+		);
+
+	return $"$(expr.Print()) = $(expr.Evaluate())";
+}

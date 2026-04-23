@@ -1,0 +1,58 @@
+﻿module test;
+
+class Base
+{
+	var x : int = 0;
+
+	new()
+	{
+	}
+
+	new(_x : int)
+	{
+		x = _x;
+	}
+
+	func GetX() : int
+	{
+		return x;
+	}
+
+	prop X : int {GetX}
+}
+
+class Ctor : Base
+{
+	new()
+	{
+	}
+
+	new(y : int, b : bool)
+		:Base(y)
+	{
+	}
+
+	new(y : int, value : int)
+		:Base(y)
+	{
+	}
+}
+
+var s = "";
+
+func main():string
+{
+	{
+		var a = new Ctor^();
+		s = s & $"[$(a.X)]";
+	}
+	{
+		var a = new Ctor^(1, true);
+		s = s & $"[$(a.X)]";
+	}
+	{
+		var a = new Ctor^(1, 2);
+		s = s & $"[$(a.X)]";
+	}
+	return s;
+}

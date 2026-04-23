@@ -1,0 +1,38 @@
+namespace test
+{
+    @cpp:HeaderFile("Test.h")
+    @cpp:ImplFile("Test.cpp")
+    class Base {}
+
+    class Derived : Base {}
+
+    class Super : Base, Derived {}
+
+    class Members
+    {
+        @cpp:Private
+        static func Sum(begin : int, end : int) : int {}
+
+        @cpp:UserImpl("ABCDEFG")
+        func Product(@cpp:Smaller begin : int, @cpp:Larger end : int) : int {}
+
+        var counter : int = 0;
+
+        class NestedClass {}
+
+        interface NestedInterface {}
+    }
+
+	class AutoProperties
+	{
+		prop A1 : int {}
+		prop B1 : int {const}
+		override prop C1 : int {not observe}
+		override prop D1 : int {const, not observe}
+		
+		prop A2 : int = 0 {}
+		prop B2 : int = 0 {const}
+		prop C2 : int = 0 {not observe}
+		prop D2 : int = 0 {const, not observe}
+	}
+}

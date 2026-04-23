@@ -1,0 +1,36 @@
+<Parser name="Workflow">
+  <Includes>&lt;VlppGlrParser.h&gt;</Includes>
+  <CppNamespace>vl::workflow</CppNamespace>
+  <HeaderGuard>VCZH_WORKFLOW_PARSER</HeaderGuard>
+  <OutputDir>../Generated</OutputDir>
+
+  <Asts>
+    <Ast name="Ast">
+      <CppNamespace>vl::workflow</CppNamespace>
+      <ReflectionNamespace>system::workflow</ReflectionNamespace>
+      <ClassPrefix>Wf</ClassPrefix>
+	    <File file="Ast/Ast.txt"/>
+	    <File file="Ast/Types.txt"/>
+	    <File file="Ast/Decls.txt"/>
+	    <File file="Ast/DeclsClass.txt"/>
+	    <File file="Ast/DeclsEnum.txt"/>
+	    <File file="Ast/DeclsStruct.txt"/>
+	    <File file="Ast/DeclsVirtual.txt"/>
+	    <File file="Ast/Statements.txt"/>
+	    <File file="Ast/StatementsVirtual.txt"/>
+	    <File file="Ast/StatementsCoroutine.txt"/>
+	    <File file="Ast/Expressions.txt"/>
+	    <File file="Ast/ExpressionsVirtual.txt"/>
+	    <File file="Ast/Module.txt"/>
+    </Ast>
+  </Asts>
+
+  <Lexer file="Lexer.txt"/>
+  <Syntax name="Parser">
+	  <File file="Syntax/Types.txt"/>
+	  <File file="Syntax/Expressions.txt"/>
+	  <File file="Syntax/Statements.txt"/>
+	  <File file="Syntax/Decls.txt"/>
+	  <File file="Syntax/Module.txt"/>
+  </Syntax>
+</Parser>

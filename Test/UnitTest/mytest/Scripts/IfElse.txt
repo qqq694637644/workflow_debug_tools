@@ -1,0 +1,15 @@
+﻿module test;
+
+func main(): string
+{
+	var a : int = 1;
+	var b : int = 2;
+	if(a == b)
+	{
+		return "相等";
+	}
+	else
+	{
+		return "不相等";
+	}
+}

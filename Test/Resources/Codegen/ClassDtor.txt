@@ -1,0 +1,42 @@
+module test;
+using test::*;
+using system::*;
+
+var s = "";
+
+class Dtor
+{
+	var name : string = "";
+	var next : Dtor* = null;
+
+	new*()
+	{
+	}
+
+	delete
+	{
+		s = $"$(s)[$(name)]";
+		if (next is not null)
+		{
+			delete next;
+		}
+	}
+}
+
+func main():string
+{
+	var x = new Dtor*();
+	x.name = "x";
+
+	var y = new Dtor*();
+	y.name = "y";
+
+	var z = new Dtor*();
+	z.name = "z";
+
+	x.next = y;
+	y.next = z;
+	delete x;
+
+	return s;
+}

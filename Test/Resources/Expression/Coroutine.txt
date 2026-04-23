@@ -1,0 +1,12 @@
+{
+	$coroutine
+	{
+		$pause
+		{
+			if($.IsCancelled)
+			{
+				$pause;
+			}
+		}
+	}
+}

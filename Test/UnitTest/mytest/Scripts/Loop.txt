@@ -1,0 +1,11 @@
+﻿module test;
+
+func main(): string
+{
+	var sum : int = 0;
+	for(x in range [1,5])
+	{
+		sum = sum + x;
+	}
+	return $"$(sum)";
+}

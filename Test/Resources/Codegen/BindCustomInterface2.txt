@@ -1,0 +1,52 @@
+module test;
+using test::*;
+using system::*;
+
+var s = "";
+
+interface ISummer2
+{
+	prop Sum : int {const}
+}
+
+interface IAdder2 : ISummer2
+{
+	func Add(value : int) : void;
+}
+
+func Bind(summer : ISummer2^) : Subscription^
+{
+	var subscription = bind(summer.Sum);
+	subscription.Open();
+	attach(subscription.ValueChanged,
+		func (value : object) : void
+		{
+			s = $"$(s)[$(cast int value)]";
+		}
+	);
+	return subscription;
+}
+
+func Execute(adder : IAdder2^) : void
+{
+	var subscription = Bind(adder);
+	for(x in range [1, 5])
+	{
+		adder.Add(x);
+	}
+	subscription.Close();
+}
+
+func main() : string
+{
+	Execute(new IAdder2^
+	{
+		override prop Sum : int = 0 {const}
+
+		override func Add(value : int) : void
+		{
+			SetSum(Sum + value);
+		}
+	});
+	return s;
+}

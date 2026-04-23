@@ -1,0 +1,58 @@
+module test;
+using test::*;
+using system::*;
+
+class OuterClass
+{
+	class Base
+	{
+		var subscription : Subscription^ = null;
+		var s : string = "";
+
+		func Initialize(derived : Derived*) : void
+		{
+			subscription = bind(
+				derived.x.Value +
+				derived.y.Value +
+				derived.z.Value
+				);
+			subscription.Open();
+			attach(subscription.ValueChanged,
+				func (value : object) : void
+				{
+					s = $"$(s)[$(cast int value)]";
+				});
+		}
+	}
+}
+
+@cpp:Friend(typeof(OuterClass))
+class Derived : OuterClass::Base
+{
+	@cpp:Protected
+	var x : ObservableValue^ = new ObservableValue^();
+	@cpp:Protected
+	var y : ObservableValue^ = new ObservableValue^();
+	@cpp:Protected
+	var z : ObservableValue^ = new ObservableValue^();
+
+	new()
+	{
+		Initialize(this);
+	}
+
+	func Execute() : void
+	{
+		x.Value = 10;
+		y.Value = 20;
+		z.Value = 30;
+		subscription.Close();
+	}
+}
+
+func main() : string
+{
+	var derived = new Derived^();
+	derived.Execute();
+	return derived.s;
+}

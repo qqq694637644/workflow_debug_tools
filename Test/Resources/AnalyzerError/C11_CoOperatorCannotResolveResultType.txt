@@ -1,0 +1,13 @@
+module test;
+using system::*;
+
+class XCoroutine
+{
+	static func AwaitAndRead(impl : object):void {}
+	static func CreateAndRun(creator : func(object) : (Coroutine^)) : void {}
+}
+
+func main():void
+$X{
+	var result = $Await;
+}
