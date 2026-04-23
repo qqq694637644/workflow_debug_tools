@@ -43,15 +43,40 @@ namespace vl
 			vint WorkflowDebugBreakpointRegistry::RegisterBreakpoint(const WorkflowDebugBreakpointRecord& breakpoint)
 			{
 				auto record = breakpoint;
-				if (record.codeIndex < 0 && sourceCatalog && record.sourcePath.Length() > 0)
+				record.verified = record.codeIndex >= 0;
+				record.reason = WString();
+
+				if (sourceCatalog && record.sourcePath.Length() > 0)
 				{
 					vint resolvedCodeIndex = -1;
 					vint resolvedRow = 0;
 					if (sourceCatalog->ResolveByPath(record.sourcePath, resolvedCodeIndex, resolvedRow))
 					{
-						record.codeIndex = resolvedCodeIndex;
-						record.row = resolvedRow;
+						(void)resolvedRow;
+						if (record.codeIndex < 0)
+						{
+							record.codeIndex = resolvedCodeIndex;
+						}
+
+						record.verified = record.codeIndex == resolvedCodeIndex;
+						if (!record.verified)
+						{
+							record.reason = L"源码路径与 codeIndex 不匹配。";
+						}
 					}
+					else if (record.codeIndex < 0)
+					{
+						record.reason = L"找不到对应的源码路径。";
+					}
+				}
+				else if (record.codeIndex < 0)
+				{
+					record.reason = L"缺少源码路径或 codeIndex。";
+				}
+
+				if (!record.verified && record.reason.Length() == 0)
+				{
+					record.reason = L"断点未通过基础校验。";
 				}
 
 				breakpoints.Add(record);

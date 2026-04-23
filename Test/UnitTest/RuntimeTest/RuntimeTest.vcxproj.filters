@@ -30,6 +30,9 @@
     <ClCompile Include="TestDeserializationErrors.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TestWorkflowDebugHost.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="TestRpc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
