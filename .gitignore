@@ -177,3 +177,4 @@ $RECYCLE.BIN/
 # Mac desktop service store files
 .DS_Store
 LuaPanda-master/
+__pycache__/

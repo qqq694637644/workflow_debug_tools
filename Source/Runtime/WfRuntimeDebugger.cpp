@@ -13,6 +13,9 @@ namespace vl
 			using namespace reflection;
 			using namespace reflection::description;
 
+			// 用文件级锁保护调试器状态，避免 stop / continue 在多线程下互相抢状态。
+			static SpinLock g_debuggerStateLock;
+
 /***********************************************************************
 IWfDebuggerCallback
 ***********************************************************************/
@@ -208,63 +211,104 @@ WfDebugger Callback Handlers
 
 			void WfDebugger::EnterThreadContext(WfRuntimeThreadContext* context)
 			{
-				if (threadContexts.Count() == 0)
+				bool shouldStart = false;
 				{
-					lastActivatedBreakPoint = InvalidBreakPoint;
-					instructionLocation = InstructionLocation();
-					OnStartExecution();
-					if (state == Stopped)
+					SPIN_LOCK(g_debuggerStateLock)
 					{
-						state = Running;
+						if (threadContexts.Count() == 0)
+						{
+							lastActivatedBreakPoint = InvalidBreakPoint;
+							instructionLocation = InstructionLocation();
+							shouldStart = true;
+						}
+
+						threadContexts.Add(context);
 					}
 				}
-				threadContexts.Add(context);
+
+				if (shouldStart)
+				{
+					OnStartExecution();
+					SPIN_LOCK(g_debuggerStateLock)
+					{
+						if (state == Stopped)
+						{
+							state = Running;
+						}
+					}
+				}
 			}
 
 			void WfDebugger::LeaveThreadContext(WfRuntimeThreadContext* context)
 			{
-				auto oldContext = threadContexts[threadContexts.Count() - 1];
-				threadContexts.RemoveAt(threadContexts.Count() - 1);
+				WfRuntimeThreadContext* oldContext = nullptr;
+				bool shouldStop = false;
+				{
+					SPIN_LOCK(g_debuggerStateLock)
+					{
+						oldContext = threadContexts[threadContexts.Count() - 1];
+						threadContexts.RemoveAt(threadContexts.Count() - 1);
+						shouldStop = threadContexts.Count() == 0;
+					}
+				}
 				CHECK_ERROR(context == oldContext, L"vl::workflow::runtime::WfDebugger::LeaveThreadContext(WfRuntimeThreadContext*)#EnterThreadContext and LeaveThreadContext should be called in pairs.");
 
-				if (threadContexts.Count() == 0)
+				if (shouldStop)
 				{
-					state = Stopped;
+					SPIN_LOCK(g_debuggerStateLock)
+					{
+						state = Stopped;
+					}
 					OnStopExecution();
 				}
 			}
 
 			bool WfDebugger::BreakIns(WfAssembly* assembly, vint instruction)
 			{
-				if (runningType != RunUntilBreakPoint)
+				RunningType runningTypeSnapshot;
+				bool stepBeforeCodegenSnapshot = true;
+				InstructionLocation instructionLocationSnapshot;
+				{
+					SPIN_LOCK(g_debuggerStateLock)
+					{
+						runningTypeSnapshot = runningType;
+						stepBeforeCodegenSnapshot = stepBeforeCodegen;
+						instructionLocationSnapshot = instructionLocation;
+
+						switch (state)
+						{
+						case RequiredToPause:
+						case RequiredToStop:
+							lastActivatedBreakPoint = WfDebugger::PauseBreakPoint;
+							return true;
+						default:;
+						}
+					}
+				}
+
+				if (runningTypeSnapshot != RunUntilBreakPoint)
 				{
 					auto il = MakeCurrentInstructionLocation();
 					bool needToBreak = false;
-					switch (runningType)
+					switch (runningTypeSnapshot)
 					{
 					case RunStepOver:
-						needToBreak = instructionLocation.BreakStepOver(il, stepBeforeCodegen);
+						needToBreak = instructionLocationSnapshot.BreakStepOver(il, stepBeforeCodegenSnapshot);
 						break;
 					case RunStepInto:
-						needToBreak = instructionLocation.BreakStepInto(il, stepBeforeCodegen);
+						needToBreak = instructionLocationSnapshot.BreakStepInto(il, stepBeforeCodegenSnapshot);
 						break;
 					default:;
 					}
 					if (needToBreak)
 					{
-						instructionLocation = il;
-						lastActivatedBreakPoint = WfDebugger::PauseBreakPoint;
+						SPIN_LOCK(g_debuggerStateLock)
+						{
+							instructionLocation = il;
+							lastActivatedBreakPoint = WfDebugger::PauseBreakPoint;
+						}
 						return true;
 					}
-				}
-
-				switch (state)
-				{
-				case RequiredToPause:
-				case RequiredToStop:
-					lastActivatedBreakPoint = WfDebugger::PauseBreakPoint;
-					return true;
-				default:;
 				}
 
 				AssemblyKey key(assembly, instruction);
@@ -332,33 +376,63 @@ WfDebugger Callback Handlers
 
 			bool WfDebugger::BreakException(Ptr<WfRuntimeExceptionInfo> info)
 			{
-				if (breakException)
+				SPIN_LOCK(g_debuggerStateLock)
 				{
-					lastActivatedBreakPoint = PauseBreakPoint;
-					return true;
+					if (breakException)
+					{
+						lastActivatedBreakPoint = PauseBreakPoint;
+						return true;
+					}
 				}
-				else
-				{
-					return false;
-				}
+
+				return false;
 			}
 
 			bool WfDebugger::WaitForContinue()
 			{
-				if (state == RequiredToStop)
 				{
-					return false;
+					SPIN_LOCK(g_debuggerStateLock)
+					{
+						if (state == RequiredToStop)
+						{
+							return false;
+						}
+
+						state = lastActivatedBreakPoint >= 0 ? PauseByBreakPoint : PauseByOperation;
+					}
 				}
 
-				state = lastActivatedBreakPoint >= 0 ? PauseByBreakPoint : PauseByOperation;
-				while (state == PauseByBreakPoint || state == PauseByOperation)
+				while (true)
 				{
+					bool shouldBlock = false;
+					{
+						SPIN_LOCK(g_debuggerStateLock)
+						{
+							shouldBlock = state == PauseByBreakPoint || state == PauseByOperation;
+						}
+					}
+
+					if (!shouldBlock)
+					{
+						break;
+					}
+
 					OnBlockExecution();
 				}
 				
-				if (state == Continue)
+				SPIN_LOCK(g_debuggerStateLock)
 				{
-					state = Running;
+					// OnBlockExecution 可能已经被唤醒，但控制线程随后才把状态改成 RequiredToStop。
+					// 这里必须再检查一次，避免把停止请求误判成一次普通继续。
+					if (state == RequiredToStop)
+					{
+						return false;
+					}
+
+					if (state == Continue)
+					{
+						state = Running;
+					}
 				}
 				return true;
 			}
@@ -576,12 +650,18 @@ WfDebugger BreakPoints
 
 			bool WfDebugger::GetBreakException()
 			{
-				return breakException;
+				SPIN_LOCK(g_debuggerStateLock)
+				{
+					return breakException;
+				}
 			}
 
 			void WfDebugger::SetBreakException(bool value)
 			{
-				breakException = value;
+				SPIN_LOCK(g_debuggerStateLock)
+				{
+					breakException = value;
+				}
 			}
 
 /***********************************************************************
@@ -590,66 +670,80 @@ WfDebugger Operations
 
 			bool WfDebugger::Run()
 			{
-				if (state != PauseByOperation && state != PauseByBreakPoint)
+				SPIN_LOCK(g_debuggerStateLock)
 				{
-					return false;
+					if (state != PauseByOperation && state != PauseByBreakPoint)
+					{
+						return false;
+					}
+					state = Continue;
+					runningType = RunUntilBreakPoint;
+					return true;
 				}
-				state = Continue;
-				runningType = RunUntilBreakPoint;
-				return true;
 			}
 
 			bool WfDebugger::Pause()
 			{
-				if (state != Running && state != Stopped)
+				SPIN_LOCK(g_debuggerStateLock)
 				{
-					return false;
+					if (state != Running && state != Stopped)
+					{
+						return false;
+					}
+					state = RequiredToPause;
+					return true;
 				}
-				state = RequiredToPause;
-				return true;
 			}
 
 			bool WfDebugger::Stop()
 			{
-				if (state != PauseByOperation && state != PauseByBreakPoint && state != Running)
+				SPIN_LOCK(g_debuggerStateLock)
 				{
-					return false;
+					if (state != PauseByOperation && state != PauseByBreakPoint && state != Running)
+					{
+						return false;
+					}
+					state = RequiredToStop;
+					return true;
 				}
-				state = RequiredToStop;
-				return true;
 			}
 
 			bool WfDebugger::StepOver(bool beforeCodegen)
 			{
-				if (state != PauseByOperation && state != PauseByBreakPoint && state != Stopped)
+				SPIN_LOCK(g_debuggerStateLock)
 				{
-					return false;
+					if (state != PauseByOperation && state != PauseByBreakPoint && state != Stopped)
+					{
+						return false;
+					}
+					if (state != Stopped)
+					{
+						state = Continue;
+						instructionLocation = MakeCurrentInstructionLocation();
+					}
+					runningType = RunStepOver;
+					stepBeforeCodegen = beforeCodegen;
+					return true;
 				}
-				if (state != Stopped)
-				{
-					state = Continue;
-					instructionLocation = MakeCurrentInstructionLocation();
-				}
-				runningType = RunStepOver;
-				stepBeforeCodegen = beforeCodegen;
-				return true;
 			}
 
 			bool WfDebugger::StepInto(bool beforeCodegen)
 			{
-				if (state != PauseByOperation && state != PauseByBreakPoint && state != Stopped)
+				SPIN_LOCK(g_debuggerStateLock)
 				{
-					return false;
+					if (state != PauseByOperation && state != PauseByBreakPoint && state != Stopped)
+					{
+						return false;
+					}
+					if (state != Stopped)
+					{
+						state = Continue;
+						instructionLocation = MakeCurrentInstructionLocation();
+					}
+					runningType = RunStepInto;
+					stepBeforeCodegen = beforeCodegen;
+					return true;
 				}
-				if (state != Stopped)
-				{
-					state = Continue;
-					instructionLocation = MakeCurrentInstructionLocation();
-				}
-				state = Continue;
-				runningType = RunStepInto;
-				stepBeforeCodegen = beforeCodegen;
-				return true;
 			}
 
 /***********************************************************************
@@ -658,17 +752,26 @@ WfDebugger
 
 			WfDebugger::State WfDebugger::GetState()
 			{
-				return state;
+				SPIN_LOCK(g_debuggerStateLock)
+				{
+					return state;
+				}
 			}
 
 			WfDebugger::RunningType WfDebugger::GetRunningType()
 			{
-				return runningType;
+				SPIN_LOCK(g_debuggerStateLock)
+				{
+					return runningType;
+				}
 			}
 
 			vint WfDebugger::GetLastActivatedBreakPoint()
 			{
-				return lastActivatedBreakPoint;
+				SPIN_LOCK(g_debuggerStateLock)
+				{
+					return lastActivatedBreakPoint;
+				}
 			}
 
 			const WfDebugger::ThreadContextList& WfDebugger::GetThreadContexts()

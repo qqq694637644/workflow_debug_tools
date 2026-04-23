@@ -820,8 +820,8 @@ TEST_FILE
 		}
 		catch (const WfRuntimeException& ex)
 		{
-			TEST_ASSERT(ex.Message() == L"Exception");
-			TEST_ASSERT(ex.IsFatal() == false);
+			TEST_ASSERT(ex.Message() == L"Internal error: Debugger stopped the program.");
+			TEST_ASSERT(ex.IsFatal() == true);
 			AssertException(ex.GetInfo(), true);
 		}
 		ResetDebuggerForCurrentThread();

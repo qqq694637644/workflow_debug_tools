@@ -259,7 +259,6 @@ Debugger
 				collections::List<vint>					freeBreakPointIndices;
 				volatile bool							evaluatingBreakPoint = false;
 				volatile bool							breakException = false;
-
 				ThreadContextList						threadContexts;
 
 				volatile State							state = Stopped;

@@ -1,4 +1,4 @@
-#ifdef _MSC_VER
+﻿#ifdef _MSC_VER
 #include <windows.h>
 #endif
 
@@ -499,7 +499,6 @@ void LogSampleCodegenResult(const WString& sampleName, const WString& itemName, 
 #define LOG_EVENT_COUNT(NAME)			case WfInsCode::NAME: writer.WriteLine(formatText(itow(index), 5) + L": " + formatText(L"    " L ## #NAME, 18) + L": eventInfo = " + ins.eventParameter->GetName() + L"<" + ins.eventParameter->GetOwnerTypeDescriptor()->GetTypeName() + L">, stackPatternCount = " + itow(ins.countParameter)); break;
 #define LOG_LABEL(NAME)					case WfInsCode::NAME: writer.WriteLine(formatText(itow(index), 5) + L": " + formatText(L"    " L ## #NAME, 18) + L": label = " + itow(ins.indexParameter)); break;
 #define LOG_TYPE(NAME)					case WfInsCode::NAME: writer.WriteLine(formatText(itow(index), 5) + L": " + formatText(L"    " L ## #NAME, 18) + L": type = " + formatType(ins.typeParameter)); break;
-
 	for (auto [ins, index] : indexed(assembly->instructions))
 	{
 		auto range = assembly->insAfterCodegen->instructionCodeMapping[index];
