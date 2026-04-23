@@ -1,3 +1,13 @@
+#define WIN32_LEAN_AND_MEAN
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+#include <atomic>
+#include <chrono>
+#include <string>
+#include <thread>
+
+#pragma comment(lib, "Ws2_32.lib")
+
 #include "../../Source/Helper.h"
 #include "../../../Source/WorkflowDebugHost/WorkflowDebugBreakpointRegistry.h"
 #include "../../../Source/WorkflowDebugHost/WorkflowDebugHost.h"
@@ -10,6 +20,102 @@
 #include "../../../Source/WorkflowDebugHost/WorkflowDebugValueInspector.h"
 
 using namespace vl::workflow::debughost;
+
+static bool ContainsSubstring(const WString& text, const WString& substring)
+{
+	return INVLOC.FindFirst(text, substring, Locale::Normalization::None).key != -1;
+}
+
+static bool SendAllBytes(SOCKET socket, const char* data, vint size)
+{
+	vint total = 0;
+	while (total < size)
+	{
+		auto sent = send(socket, data + total, (int)(size - total), 0);
+		if (sent <= 0)
+		{
+			return false;
+		}
+		total += sent;
+	}
+	return true;
+}
+
+static bool SendUtf8Line(SOCKET socket, const WString& line)
+{
+	auto utf8 = wtou8(line + L"\n");
+	return SendAllBytes(socket, reinterpret_cast<const char*>(utf8.Buffer()), utf8.Length());
+}
+
+static bool ReadUtf8Line(SOCKET socket, WString& line)
+{
+	std::string buffer;
+	char chunk[256];
+	while (true)
+	{
+		auto received = recv(socket, chunk, sizeof(chunk), 0);
+		if (received <= 0)
+		{
+			return false;
+		}
+
+		buffer.append(chunk, received);
+		auto newline = buffer.find('\n');
+		if (newline != std::string::npos)
+		{
+			auto raw = buffer.substr(0, newline);
+			if (!raw.empty() && raw.back() == '\r')
+			{
+				raw.pop_back();
+			}
+			std::u8string utf8Line(raw.begin(), raw.end());
+			line = u8tow(U8String::Unmanaged(utf8Line.c_str()));
+			return true;
+		}
+	}
+}
+
+static bool WaitForEnvelope(WorkflowDebugTransport& transport, WorkflowDebugEnvelope& envelope, vint timeoutMilliseconds)
+{
+	auto begin = std::chrono::steady_clock::now();
+	while (true)
+	{
+		if (transport.TryReceive(envelope))
+		{
+			return true;
+		}
+
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count();
+		if (elapsed >= timeoutMilliseconds)
+		{
+			return false;
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+}
+
+static SOCKET CreateLoopbackListener(vint& port)
+{
+	WSADATA wsaData;
+	TEST_ASSERT(WSAStartup(MAKEWORD(2, 2), &wsaData) == 0);
+
+	auto listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	TEST_ASSERT(listenSocket != INVALID_SOCKET);
+
+	sockaddr_in address = {};
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	address.sin_port = htons(0);
+
+	TEST_ASSERT(bind(listenSocket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+	TEST_ASSERT(listen(listenSocket, 1) == 0);
+
+	int addressSize = sizeof(address);
+	TEST_ASSERT(getsockname(listenSocket, reinterpret_cast<sockaddr*>(&address), &addressSize) == 0);
+	port = ntohs(address.sin_port);
+	return listenSocket;
+}
 
 TEST_FILE
 {
@@ -133,6 +239,138 @@ TEST_FILE
 
 		transport.Close();
 		TEST_ASSERT(transport.IsOpen() == false);
+	});
+
+	TEST_CASE(L"WorkflowDebugTransport TCP 收发")
+	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+
+		WString serverReceivedLine;
+		std::atomic<bool> serverFailed = false;
+		std::atomic<bool> serverSucceeded = false;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				serverFailed = true;
+				return;
+			}
+
+			// 给客户端一点时间把接收线程拉起来，避免把分包测试误判成连接时序问题。
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+			WString firstEvent = L"{\"type\":\"event\",\"seq\":101,\"sessionId\":\"wf-net\",\"cmd\":\"output\",\"body\":{\"level\":\"info\",\"message\":\"first\"}}";
+			auto firstUtf8 = wtou8(firstEvent + L"\n");
+			auto split = firstUtf8.Length() / 2;
+			if (!SendAllBytes(clientSocket, reinterpret_cast<const char*>(firstUtf8.Buffer()), split))
+			{
+				serverFailed = true;
+				shutdown(clientSocket, SD_BOTH);
+				closesocket(clientSocket);
+				return;
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(20));
+			if (!SendAllBytes(clientSocket, reinterpret_cast<const char*>(firstUtf8.Buffer()) + split, firstUtf8.Length() - split))
+			{
+				serverFailed = true;
+				shutdown(clientSocket, SD_BOTH);
+				closesocket(clientSocket);
+				return;
+			}
+
+			if (!ReadUtf8Line(clientSocket, serverReceivedLine))
+			{
+				serverFailed = true;
+				shutdown(clientSocket, SD_BOTH);
+				closesocket(clientSocket);
+				return;
+			}
+
+			WString secondEvent = L"{\"type\":\"event\",\"seq\":102,\"sessionId\":\"wf-net\",\"cmd\":\"stopped\",\"body\":{\"reason\":\"breakpoint\"}}";
+			if (!SendUtf8Line(clientSocket, secondEvent))
+			{
+				serverFailed = true;
+				shutdown(clientSocket, SD_BOTH);
+				closesocket(clientSocket);
+				return;
+			}
+
+			serverSucceeded = true;
+			shutdown(clientSocket, SD_BOTH);
+			closesocket(clientSocket);
+		});
+
+		WorkflowDebugTransport transport;
+		bool connectSucceeded = transport.Connect(L"127.0.0.1", port);
+		bool sendSucceeded = false;
+		bool firstReceiveSucceeded = false;
+		bool secondReceiveSucceeded = false;
+		bool requestLineMatched = false;
+
+		WorkflowDebugEnvelope request;
+		request.kind = WorkflowDebugEnvelopeKind::Request;
+		request.command = L"hello";
+		request.sessionId = L"wf-net";
+		request.seq = 7;
+		request.replyTo = 1;
+		request.body = L"{\"workspaceRoot\":\"D:/workspace\"}";
+
+		if (connectSucceeded)
+		{
+			sendSucceeded = transport.Send(request);
+		}
+
+		WorkflowDebugEnvelope firstReceived;
+		WorkflowDebugEnvelope secondReceived;
+		if (connectSucceeded && sendSucceeded)
+		{
+			firstReceiveSucceeded = WaitForEnvelope(transport, firstReceived, 2000);
+			secondReceiveSucceeded = WaitForEnvelope(transport, secondReceived, 2000);
+		}
+
+		if (firstReceiveSucceeded)
+		{
+			firstReceiveSucceeded = firstReceived.kind == WorkflowDebugEnvelopeKind::Event
+				&& firstReceived.command == L"output"
+				&& firstReceived.sessionId == L"wf-net"
+				&& firstReceived.seq == 101
+				&& firstReceived.body == L"{\"level\":\"info\",\"message\":\"first\"}";
+		}
+
+		if (secondReceiveSucceeded)
+		{
+			secondReceiveSucceeded = secondReceived.kind == WorkflowDebugEnvelopeKind::Event
+				&& secondReceived.command == L"stopped"
+				&& secondReceived.sessionId == L"wf-net"
+				&& secondReceived.seq == 102
+				&& secondReceived.body == L"{\"reason\":\"breakpoint\"}";
+		}
+
+		transport.Close();
+		TEST_ASSERT(transport.IsOpen() == false);
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
+
+		requestLineMatched = ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"type\":\"request\""))
+			&& ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"cmd\":\"hello\""))
+			&& ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"sessionId\":\"wf-net\""))
+			&& ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"replyTo\":1"))
+			&& ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"workspaceRoot\":\"D:\\/workspace\""));
+
+		TEST_ASSERT(connectSucceeded == true);
+		TEST_ASSERT(sendSucceeded == true);
+		TEST_ASSERT(firstReceiveSucceeded == true);
+		TEST_ASSERT(secondReceiveSucceeded == true);
+		TEST_ASSERT(serverFailed.load() == false);
+		TEST_ASSERT(serverSucceeded.load() == true);
+		TEST_ASSERT(requestLineMatched == true);
 	});
 
 	TEST_CASE(L"WorkflowDebugStackInspector 和变量检查器")
