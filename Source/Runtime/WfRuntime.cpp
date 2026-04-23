@@ -45,12 +45,12 @@ WfRuntimeCallStackInfo
 			{
 				if (!cache)
 				{
-					if (!context)
+					if (context)
 					{
 						Dictionary<WString, Value> map;
-						for (auto [name, index] : indexed(names))
+						for (vint i = 0; i < names.Count(); i++)
 						{
-							map.Add(name, context->variables[index]);
+							map.Add(names[i], context->variables[i]);
 						}
 						cache = IValueDictionary::Create(
 							From(map)

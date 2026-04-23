@@ -674,16 +674,26 @@ TEST_FILE
 		TEST_ASSERT(info->callStack.Count() == 3);
 		{
 			auto callStack = info->callStack[0];
-			auto function = callStack->assembly->functions[callStack->functionIndex];
 			TEST_ASSERT(callStack->GetFunctionName() == L"Update");
 			TEST_ASSERT(callStack->GetRowBeforeCodegen() == 8);
-			TEST_ASSERT(callStack->global->variables.Count() == 1);
-			TEST_ASSERT(UnboxValue<vint>(callStack->global->variables[callStack->assembly->variableNames.IndexOf(L"s")]) == 0);
-			TEST_ASSERT(callStack->captured == nullptr);
-			TEST_ASSERT(callStack->arguments->variables.Count() == 2);
-			TEST_ASSERT(UnboxValue<vint>(callStack->arguments->variables[function->argumentNames.IndexOf(L"a")]) == 0);
-			TEST_ASSERT(UnboxValue<vint>(callStack->arguments->variables[function->argumentNames.IndexOf(L"b")]) == 1);
-			TEST_ASSERT(callStack->localVariables == nullptr);
+			auto globalVariables = callStack->GetGlobalVariables();
+			TEST_ASSERT(globalVariables);
+			TEST_ASSERT(globalVariables->GetCount() == 1);
+			TEST_ASSERT(UnboxValue<vint>(globalVariables->Get(BoxValue(WString(L"s")))) == 0);
+
+			auto capturedVariables = callStack->GetCapturedVariables();
+			TEST_ASSERT(capturedVariables);
+			TEST_ASSERT(capturedVariables->GetCount() == 0);
+
+			auto arguments = callStack->GetLocalArguments();
+			TEST_ASSERT(arguments);
+			TEST_ASSERT(arguments->GetCount() == 2);
+			TEST_ASSERT(UnboxValue<vint>(arguments->Get(BoxValue(WString(L"a")))) == 0);
+			TEST_ASSERT(UnboxValue<vint>(arguments->Get(BoxValue(WString(L"b")))) == 1);
+
+			auto localVariables = callStack->GetLocalVariables();
+			TEST_ASSERT(localVariables);
+			TEST_ASSERT(localVariables->GetCount() == 0);
 		}
 		{
 			auto callStack = info->callStack[1];
@@ -691,18 +701,28 @@ TEST_FILE
 		}
 		{
 			auto callStack = info->callStack[2];
-			auto function = callStack->assembly->functions[callStack->functionIndex];
 			TEST_ASSERT(callStack->GetFunctionName() == (uncatch ? L"Main" : L"Main2"));
 			TEST_ASSERT(callStack->GetRowBeforeCodegen() == (uncatch ? 15 : 25));
-			TEST_ASSERT(callStack->global->variables.Count() == 1);
-			TEST_ASSERT(UnboxValue<vint>(callStack->global->variables[callStack->assembly->variableNames.IndexOf(L"s")]) == 0);
-			TEST_ASSERT(callStack->captured == nullptr);
-			TEST_ASSERT(callStack->arguments == nullptr);
-			TEST_ASSERT(callStack->localVariables->variables.Count() == (uncatch ? 1 : 2));
-			TEST_ASSERT(callStack->localVariables->variables[function->localVariableNames.IndexOf(L"o")].GetTypeDescriptor()->GetTypeName() == L"test::ObservableValue");
+			auto globalVariables = callStack->GetGlobalVariables();
+			TEST_ASSERT(globalVariables);
+			TEST_ASSERT(globalVariables->GetCount() == 1);
+			TEST_ASSERT(UnboxValue<vint>(globalVariables->Get(BoxValue(WString(L"s")))) == 0);
+
+			auto capturedVariables = callStack->GetCapturedVariables();
+			TEST_ASSERT(capturedVariables);
+			TEST_ASSERT(capturedVariables->GetCount() == 0);
+
+			auto arguments = callStack->GetLocalArguments();
+			TEST_ASSERT(arguments);
+			TEST_ASSERT(arguments->GetCount() == 0);
+
+			auto localVariables = callStack->GetLocalVariables();
+			TEST_ASSERT(localVariables);
+			TEST_ASSERT(localVariables->GetCount() == (uncatch ? 1 : 2));
+			TEST_ASSERT(localVariables->Get(BoxValue(WString(L"o"))).GetTypeDescriptor()->GetTypeName() == L"test::ObservableValue");
 			if (!uncatch)
 			{
-				TEST_ASSERT(callStack->localVariables->variables[function->localVariableNames.IndexOf(L"<catch>ex")].IsNull());
+				TEST_ASSERT(localVariables->Get(BoxValue(WString(L"<catch>ex"))).IsNull());
 			}
 		}
 	};
