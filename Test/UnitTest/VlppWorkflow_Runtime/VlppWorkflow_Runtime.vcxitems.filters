@@ -1,6 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <Filter Include="WorkflowDebugHost">
+      <UniqueIdentifier>{e3c1fd18-634d-48ee-b726-159ab8a65de9}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Runtime">
       <UniqueIdentifier>{528f40f5-5173-49b4-ae8c-032740e2ec57}</UniqueIdentifier>
     </Filter>
@@ -12,6 +15,36 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugHost.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugSession.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugSessionState.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugBridge.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugRuntimeBinding.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugTransport.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugSourceCatalog.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugBreakpointRegistry.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugStackInspector.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugValueInspector.cpp">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)..\..\..\Source\Runtime\WfRuntimeInstruction.cpp">
       <Filter>Runtime\Metadata</Filter>
     </ClCompile>
@@ -43,6 +76,39 @@
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Runtime\WfRuntimeTypeDescriptor.h">
       <Filter>Runtime\Metadata</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugProtocol.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugHost.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugSession.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugSessionState.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugBridge.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugRuntimeBinding.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugTransport.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugSourceCatalog.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugBreakpointRegistry.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugStackInspector.h">
+      <Filter>WorkflowDebugHost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\WorkflowDebugHost\WorkflowDebugValueInspector.h">
+      <Filter>WorkflowDebugHost</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)..\..\..\Source\Runtime\WfRuntime.h">
       <Filter>Runtime\Execution</Filter>

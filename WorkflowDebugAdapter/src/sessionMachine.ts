@@ -823,6 +823,8 @@ export class TargetSessionMachine extends BaseSessionMachine {
     }
 
     const threadId = message.callStack[0].threadId;
+    // 异常现场必须视为新的暂停现场，旧线程的变量快照不能沿用，否则面板可能显示过期数据。
+    this.valueInspector.clearThread(threadId);
     const stackFrames: Array<StackInspectorFrameInput> = [];
     for (const frame of message.callStack) {
       if (frame.threadId !== threadId) {

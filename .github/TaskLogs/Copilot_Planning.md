@@ -12,7 +12,7 @@
 | 方案 | 结论 | 原因 |
 | --- | --- | --- |
 | 目标端直接实现 DAP | 不选 | 目标端会被 VSCode 协议绑死，宿主程序集成成本高，移植性差。 |
-| VSCode DAP + 目标端桥接协议 | 选用 | VSCode 和运行时职责分离，远程场景更稳，Workflow 运行时只关心自身语义。 |
+| VSCode DAP + 主进程内 WorkflowDebugHost.dll | 选用 | VSCode 和运行时职责分离，桥接层随主进程加载，既保留远程能力又不把调试代理做成独立目标进程。 |
 
 ## 协议草图
 
@@ -21,7 +21,7 @@
 ```text
 VSCode
   -> DAP 调试适配器
-      -> Workflow 远程调试桥
+      -> WorkflowDebugHost.dll
           -> WfDebugger
               -> Workflow Runtime
 ```
@@ -31,13 +31,13 @@ VSCode
 ```text
 1. VSCode 启动调试会话。
 2. 调试适配器开启监听或连接目标端。
-3. 目标端调试代理建立 TCP 连接。
+3. 主进程内的 `WorkflowDebugHost.dll` 建立 TCP 连接。
 4. 双方交换 hello、版本号、能力集、源码映射信息。
 5. 调试适配器下发断点。
 6. 运行时命中断点后，目标端上报 stopped。
 7. VSCode 按需拉取 stackTrace、scopes、variables。
-8. 用户点击继续或单步，适配器转发到目标端。
-9. 目标端返回执行结果和新的暂停状态。
+8. 用户点击继续或单步，适配器转发到主进程内库。
+9. 主进程内库返回执行结果和新的暂停状态。
 ```
 
 ### 消息外壳
@@ -99,21 +99,25 @@ VSCode
 | `reconnectManager` | 处理断线重连和会话恢复 | `retryConnect()`、`restoreSession()` |
 | `configModel` | 解析 launch 配置和路径映射 | `resolveConfig()`、`normalizePathRules()` |
 
-## 目标端模块清单
+## 主进程内库 / DLL 模块清单
 
 | 模块 | 职责 | 主要接口 |
 | --- | --- | --- |
-| `WorkflowDebugAgent` | 远程调试入口 | `start()`、`attach()`、`detach()` |
-| `DebuggerBridge` | 把协议命令映射到 `WfDebugger` | `onInitialize()`、`onSetBreakpoints()`、`onContinue()`、`onStep()` |
-| `BridgeTransport` | TCP 收发和消息分帧 | `send()`、`receive()`、`close()` |
-| `SessionState` | 维护会话状态机 | `Connected`、`Ready`、`Paused`、`Running`、`Stopped` |
-| `SourceCatalog` | 维护 `codeIndex -> 源码路径` 映射 | `registerSource()`、`resolvePath()`、`resolveCodeIndex()` |
-| `BreakpointRegistry` | 维护断点表并调用 `AddCodeLineBreakPoint` | `applyBreakpoints()`、`clearBreakpoints()` |
-| `StackInspector` | 读取当前线程上下文和调用栈 | `collectStackTrace()`、`collectCurrentFrame()` |
-| `ValueInspector` | 读取局部、参数、捕获、全局变量 | `collectScopes()`、`collectVariables()` |
-| `HandleTable` | 给对象树分配稳定句柄 | `allocate()`、`lookup()`、`release()` |
+| `WorkflowDebugHost` | 主进程内调试宿主入口 | `initialize()`、`shutdown()`、`createSession()`、`destroySession()` |
+| `WorkflowDebugSession` | 单次调试会话对象 | `attach()`、`detach()`、`dispatch()`、`snapshot()` |
+| `WorkflowDebugBridge` | 把协议命令映射到 `WfDebugger` | `onInitialize()`、`onSetBreakpoints()`、`onContinue()`、`onStep()`、`onStackTrace()` |
+| `WorkflowDebugTransport` | TCP 收发和消息分帧 | `send()`、`receive()`、`close()` |
+| `WorkflowDebugSessionState` | 维护会话状态机 | `Connected`、`Ready`、`Paused`、`Running`、`Stopped` |
+| `WorkflowDebugSourceCatalog` | 维护 `codeIndex -> 源码路径` 映射 | `registerSource()`、`resolvePath()`、`resolveCodeIndex()` |
+| `WorkflowDebugBreakpointRegistry` | 维护断点表并调用 `AddCodeLineBreakPoint` | `applyBreakpoints()`、`clearBreakpoints()` |
+| `WorkflowDebugStackInspector` | 读取当前线程上下文和调用栈 | `collectStackTrace()`、`collectCurrentFrame()` |
+| `WorkflowDebugValueInspector` | 读取局部、参数、捕获、全局变量 | `collectScopes()`、`collectVariables()` |
+| `RemoteWfDebugger` | 绑定运行时线程并接收暂停回调 | `OnStartExecution()`、`OnBlockExecution()`、`OnStopExecution()` |
+| `WorkflowDebugRuntimeBinding` | 装配与拆卸 `WfDebugger` | `bindCurrentThread()`、`unbindCurrentThread()` |
 | `ExpressionEvaluator` | 断点态求值，后置实现 | `evaluate()`、`compileExpression()` |
 | `LogChannel` | 输出运行时日志和诊断信息 | `emitOutput()`、`emitException()` |
+
+> 说明：`HandleTable` 只存在于 `WorkflowDebugAdapter` 侧，用来把主进程内库返回的远程变量引用转换成 DAP 的本地句柄，不放进 `WorkflowDebugHost`。
 
 ## 复用点
 
@@ -124,6 +128,67 @@ VSCode
 | `WfRuntimeCallStackInfo` | 变量视图 | 适合做 DAP 的作用域和变量展开 |
 | `WfRuntimeExceptionInfo` | 异常暂停 | 可直接映射成 `exception` stopped reason |
 | `WfAssembly` | 源码与指令映射 | 用于 `codeIndex`、行号、源码定位 |
+
+## WorkflowDebugHost 目录结构
+
+### 推荐布局
+
+| 路径 | 角色 | 说明 |
+| --- | --- | --- |
+| `WorkflowDebugHost/WorkflowDebugHost.h` | 对外入口 | 导出宿主库的初始化、销毁和会话创建接口。 |
+| `WorkflowDebugHost/WorkflowDebugHost.cpp` | 库入口实现 | 绑定主进程的脚本执行生命周期。 |
+| `WorkflowDebugHost/WorkflowDebugSession.h` | 会话对象声明 | 持有一次调试会话所需的全部状态。 |
+| `WorkflowDebugHost/WorkflowDebugSession.cpp` | 会话对象实现 | 负责 attach / detach、消息路由和状态切换。 |
+| `WorkflowDebugHost/WorkflowDebugBridge.h` | 协议桥声明 | 把调试协议翻译成 `WfDebugger` 调用。 |
+| `WorkflowDebugHost/WorkflowDebugBridge.cpp` | 协议桥实现 | 处理 hello / initialize / setBreakpoints / continue / next / stepIn / stackTrace / scopes / variables / exception。 |
+| `WorkflowDebugHost/WorkflowDebugTransport.h` | 传输层声明 | 屏蔽 socket、分帧和收发细节。 |
+| `WorkflowDebugHost/WorkflowDebugTransport.cpp` | 传输层实现 | 负责与 VSCode 调试适配器双向通信。 |
+| `WorkflowDebugHost/WorkflowDebugSessionState.h` | 状态机声明 | 管理 Connected / Ready / Paused / Running / Stopped。 |
+| `WorkflowDebugHost/WorkflowDebugSessionState.cpp` | 状态机实现 | 处理序列号、会话切换和暂停恢复。 |
+| `WorkflowDebugHost/WorkflowDebugSourceCatalog.h` | 源码目录声明 | 维护 `codeIndex -> 路径`、路径别名和行号映射。 |
+| `WorkflowDebugHost/WorkflowDebugSourceCatalog.cpp` | 源码目录实现 | 处理 `hello` 与 `initialize` 下发的映射信息。 |
+| `WorkflowDebugHost/WorkflowDebugBreakpointRegistry.h` | 断点登记声明 | 将 `setBreakpoints` 映射成 `AddCodeLineBreakPoint`。 |
+| `WorkflowDebugHost/WorkflowDebugBreakpointRegistry.cpp` | 断点登记实现 | 维护断点校验、清理和复用。 |
+| `WorkflowDebugHost/WorkflowDebugStackInspector.h` | 调用栈读取声明 | 从 `WfDebugger` / `WfRuntimeThreadContext` 组装栈帧。 |
+| `WorkflowDebugHost/WorkflowDebugStackInspector.cpp` | 调用栈读取实现 | 为 `stackTrace` 和异常暂停生成统一栈数据。 |
+| `WorkflowDebugHost/WorkflowDebugValueInspector.h` | 变量读取声明 | 从 `WfRuntimeCallStackInfo` 读取局部、参数、捕获、全局变量。 |
+| `WorkflowDebugHost/WorkflowDebugValueInspector.cpp` | 变量读取实现 | 生成 `scopes / variables` 响应所需的数据。 |
+| `WorkflowDebugHost/WorkflowDebugRuntimeBinding.h` | 运行时绑定声明 | 管理 `SetDebuggerForCurrentThread` / `ResetDebuggerForCurrentThread`。 |
+| `WorkflowDebugHost/WorkflowDebugRuntimeBinding.cpp` | 运行时绑定实现 | 在主进程脚本执行前后装配和拆卸 `WfDebugger`。 |
+
+### 类图
+
+```text
+MainProcess
+  └─ loads WorkflowDebugHost.dll
+      └─ WorkflowDebugHost
+          └─ createSession(sessionId)
+              └─ WorkflowDebugSession
+                  ├─ WorkflowDebugTransport
+                  ├─ WorkflowDebugBridge
+                  ├─ WorkflowDebugSessionState
+                  ├─ WorkflowDebugSourceCatalog
+                  ├─ WorkflowDebugBreakpointRegistry
+                  ├─ WorkflowDebugStackInspector
+                  ├─ WorkflowDebugValueInspector
+                  └─ RemoteWfDebugger : WfDebugger
+
+WorkflowDebugTransport <--> VSCode DAP Adapter
+WorkflowDebugBridge --> RemoteWfDebugger
+RemoteWfDebugger --> WfDebugger
+WorkflowDebugStackInspector --> WfDebugger / WfRuntimeThreadContext
+WorkflowDebugValueInspector --> WfRuntimeCallStackInfo
+WorkflowDebugBreakpointRegistry --> WfDebugger::AddCodeLineBreakPoint
+WorkflowDebugRuntimeBinding --> SetDebuggerForCurrentThread / ResetDebuggerForCurrentThread
+```
+
+### 职责边界
+
+1. `WorkflowDebugSession` 只管会话生命周期和资源所有权，不直接解析协议。
+2. `WorkflowDebugBridge` 只管协议到运行时的翻译，不碰 socket 细节。
+3. `WorkflowDebugTransport` 只管消息收发，不理解断点、调用栈或变量语义。
+4. `RemoteWfDebugger` 才是真正挂到运行时线程上的调试对象，负责暂停、继续和单步。
+5. `WorkflowDebugStackInspector` 和 `WorkflowDebugValueInspector` 只读取运行时快照，不维护 UI 状态。
 
 ## 落地顺序
 
@@ -138,7 +203,7 @@ VSCode
 2. Workflow 调试信息只有 `codeIndex + row`，没有天然的绝对路径，路径映射必须独立维护。
 3. `evaluate` 不是现成能力，不能照搬 LuaPanda 的 `loadstring` 方案，需要单独设计。
 4. 多线程和协程场景下，`threadId`、`frameId`、暂停恢复逻辑要严格区分。
-5. 变量面板不要一次性展开整棵对象图，必须使用句柄表按需展开。
+5. 变量面板不要一次性展开整棵对象图，必须使用适配器侧句柄表按需展开。
 
 ## 后续预估改动范围
 
@@ -147,11 +212,11 @@ VSCode
 3. `Source/Runtime/WfRuntime.h`
 4. `Source/Runtime/WfRuntime.cpp`
 5. `Test/UnitTest/RuntimeTest/TestDebugger.cpp`
-6. 新增 VSCode 调试适配层与目标端调试桥接层
+6. 新增 VSCode 调试适配层与主进程内 `WorkflowDebugHost.dll`
 
 ## 结论
 
-推荐采用“VSCode DAP 适配器 + 目标端 Workflow 调试桥 + 现有 `WfDebugger`”的三层结构。这样既能复用现有运行时能力，又能把远程连接、路径映射、变量句柄和表达式求值这些跨进程问题隔离出去。
+推荐采用“VSCode DAP 适配器 + 主进程内 `WorkflowDebugHost.dll` + 现有 `WfDebugger`”的三层结构。这样既能复用现有运行时能力，又能把远程连接、路径映射、变量句柄和表达式求值这些跨边界问题隔离出去。
 
 ## 第一阶段拆解
 
@@ -182,7 +247,7 @@ VSCode
 
 1. 一份协议定义草案。
 2. VSCode 端会话状态机。
-3. 目标端会话状态机。
+3. 主进程内库会话状态机。
 
 **验收标准**
 
@@ -199,7 +264,7 @@ VSCode
 **交付物**
 
 1. VSCode 端 `bridgeTransport`。
-2. 目标端 `BridgeTransport`。
+2. 主进程内库 `WorkflowDebugTransport`。
 3. 消息分帧和超时处理。
 
 **验收标准**
@@ -218,7 +283,7 @@ VSCode
 
 1. `SourceCatalog`。
 2. `breakpointMapper`。
-3. 目标端 `BreakpointRegistry`。
+3. 主进程内库 `WorkflowDebugBreakpointRegistry`。
 
 **验收标准**
 
@@ -235,7 +300,7 @@ VSCode
 **交付物**
 
 1. VSCode 端 `continueRequest / nextRequest / stepInRequest`。
-2. 目标端 `onContinue / onStep`。
+2. 主进程内库 `onContinue / onStep`。
 3. 暂停事件上报 `stopped`。
 
 **验收标准**
@@ -252,7 +317,7 @@ VSCode
 
 **交付物**
 
-1. 目标端 `StackInspector`。
+1. 主进程内库 `WorkflowDebugStackInspector`。
 2. VSCode 端 `stackModel`。
 3. `stackTraceRequest` 实现。
 
@@ -270,7 +335,7 @@ VSCode
 
 **交付物**
 
-1. 目标端 `ValueInspector`。
+1. 主进程内库 `WorkflowDebugValueInspector`。
 2. VSCode 端 `scopeModel`。
 3. VSCode 端 `variableModel` 和句柄表。
 
@@ -288,7 +353,7 @@ VSCode
 
 **交付物**
 
-1. 目标端异常上报。
+1. 主进程内异常上报。
 2. VSCode 端 `exception` stopped reason。
 
 **验收标准**
@@ -343,7 +408,7 @@ VSCode
 | `Source/Runtime/WfRuntimeDebugger.cpp` | 调试器运行控制 | 第一阶段原则上不动；如果后续确认需要步出，再单独补实现。 |
 | `Source/Runtime/WfRuntime.h` | 栈帧与异常数据结构 | 第一阶段不扩新概念，优先复用现有 `WfRuntimeThreadContext` 和 `WfRuntimeCallStackInfo`。 |
 
-### 新建独立工程
+### 主进程内库 / DLL 文件清单
 
 | 工程/文件 | 角色 | 第一阶段动作 |
 | --- | --- | --- |
@@ -357,31 +422,43 @@ VSCode
 | `WorkflowDebugAdapter/src/stackModel.ts` | 调用栈模型 | 把远端线程上下文转换成 DAP `StackFrame`。 |
 | `WorkflowDebugAdapter/src/scopeModel.ts` | 作用域模型 | 构建 Local / Argument / Captured / Global 四类作用域。 |
 | `WorkflowDebugAdapter/src/variableModel.ts` | 变量模型 | 构建变量树、句柄表和按需展开逻辑。 |
-| `WorkflowDebugHost/main.cpp` | 目标端入口 | 建立远程调试会话，初始化运行时和桥接层。 |
-| `WorkflowDebugHost/DebugBridge.cpp` | 协议到运行时的映射层 | 把协议命令翻译成 `WfDebugger` 调用。 |
-| `WorkflowDebugHost/Transport.cpp` | 目标端传输层 | 与 VSCode 调试适配器保持双向消息通信。 |
-| `WorkflowDebugHost/SourceCatalog.cpp` | 源码目录 | 记录编译后 `codeIndex` 与真实源码路径的关系。 |
-| `WorkflowDebugHost/BreakpointRegistry.cpp` | 断点登记 | 调用 `AddCodeLineBreakPoint` 并回传校验结果。 |
-| `WorkflowDebugHost/StackInspector.cpp` | 调用栈读取 | 从当前线程上下文提取栈帧信息。 |
-| `WorkflowDebugHost/ValueInspector.cpp` | 变量读取 | 从当前帧读取局部、参数、捕获、全局变量。 |
-| `WorkflowDebugHost/SessionState.cpp` | 会话状态机 | 管理 Connected / Ready / Paused / Running / Stopped。 |
+| `WorkflowDebugHost/WorkflowDebugHost.h` | 宿主库入口 | 导出 `initialize()`、`shutdown()`、`createSession()`、`destroySession()`。 |
+| `WorkflowDebugHost/WorkflowDebugHost.cpp` | 宿主库入口实现 | 绑定主进程的脚本执行生命周期。 |
+| `WorkflowDebugHost/WorkflowDebugSession.h` | 会话对象声明 | 持有一次调试会话所需的全部状态。 |
+| `WorkflowDebugHost/WorkflowDebugSession.cpp` | 会话对象实现 | 负责 attach / detach、消息路由和状态切换。 |
+| `WorkflowDebugHost/WorkflowDebugBridge.h` | 协议桥声明 | 把调试协议翻译成 `WfDebugger` 调用。 |
+| `WorkflowDebugHost/WorkflowDebugBridge.cpp` | 协议桥实现 | 处理 hello / initialize / setBreakpoints / continue / next / stepIn / stackTrace / scopes / variables / exception。 |
+| `WorkflowDebugHost/WorkflowDebugTransport.h` | 传输层声明 | 屏蔽 socket、分帧和收发细节。 |
+| `WorkflowDebugHost/WorkflowDebugTransport.cpp` | 传输层实现 | 负责与 VSCode 调试适配器双向通信。 |
+| `WorkflowDebugHost/WorkflowDebugSessionState.h` | 状态机声明 | 管理 Connected / Ready / Paused / Running / Stopped。 |
+| `WorkflowDebugHost/WorkflowDebugSessionState.cpp` | 状态机实现 | 处理序列号、会话切换和暂停恢复。 |
+| `WorkflowDebugHost/WorkflowDebugSourceCatalog.h` | 源码目录声明 | 维护 `codeIndex -> 路径`、路径别名和行号映射。 |
+| `WorkflowDebugHost/WorkflowDebugSourceCatalog.cpp` | 源码目录实现 | 处理 `hello` 与 `initialize` 下发的映射信息。 |
+| `WorkflowDebugHost/WorkflowDebugBreakpointRegistry.h` | 断点登记声明 | 将 `setBreakpoints` 映射成 `AddCodeLineBreakPoint`。 |
+| `WorkflowDebugHost/WorkflowDebugBreakpointRegistry.cpp` | 断点登记实现 | 维护断点校验、清理和复用。 |
+| `WorkflowDebugHost/WorkflowDebugStackInspector.h` | 调用栈读取声明 | 从 `WfDebugger` / `WfRuntimeThreadContext` 组装栈帧。 |
+| `WorkflowDebugHost/WorkflowDebugStackInspector.cpp` | 调用栈读取实现 | 为 `stackTrace` 和异常暂停生成统一栈数据。 |
+| `WorkflowDebugHost/WorkflowDebugValueInspector.h` | 变量读取声明 | 从 `WfRuntimeCallStackInfo` 读取局部、参数、捕获、全局变量。 |
+| `WorkflowDebugHost/WorkflowDebugValueInspector.cpp` | 变量读取实现 | 生成 `scopes / variables` 响应所需的数据。 |
+| `WorkflowDebugHost/WorkflowDebugRuntimeBinding.h` | 运行时绑定声明 | 管理 `SetDebuggerForCurrentThread` / `ResetDebuggerForCurrentThread`。 |
+| `WorkflowDebugHost/WorkflowDebugRuntimeBinding.cpp` | 运行时绑定实现 | 在主进程脚本执行前后装配和拆卸 `WfDebugger`。 |
 
 ### 第一阶段当前仓库优先级
 
 1. 先修运行时变量辅助逻辑，确保异常栈和变量视图可复用。
 2. 同步补 `RuntimeTest` 的回归用例，先把现有调试能力锁住。
-3. 远程调试的主要实现放在独立工程，不要把调试适配器塞进运行时库。
+3. 远程调试的主要实现放在主进程内库 / DLL，不要再拆一个独立目标端可执行文件。
 
-### 第一阶段独立工程优先级
+### 第一阶段主进程内库优先级
 
-1. 先做 `bridgeTransport` 和协议类型定义。
-2. 再做 `debugSession` 与 `DebugBridge`。
-3. 然后做 `SourceCatalog`、`BreakpointRegistry` 和 `StackInspector`。
-4. 最后做 `ValueInspector`、`variableModel` 和异常映射。
+1. 先做 `WorkflowDebugAdapter` 的 `bridgeTransport` 和协议类型定义。
+2. 再做 `WorkflowDebugAdapter` 的 `debugSession` 与 `breakpointMapper`。
+3. 然后做 `WorkflowDebugHost` 的 `WorkflowDebugSourceCatalog`、`WorkflowDebugBreakpointRegistry` 和 `WorkflowDebugStackInspector`。
+4. 最后做 `WorkflowDebugHost` 的 `WorkflowDebugValueInspector`、`RemoteWfDebugger` 和异常映射。
 
 ### 第一阶段验收文件
 
-1. `WorkflowDebugAdapter` 能成功与目标端握手。
-2. 断点能在目标端被校验并命中。
+1. `WorkflowDebugAdapter` 能成功与主进程内库握手。
+2. 断点能在主进程内库被校验并命中。
 3. VSCode 可以看到调用栈和变量。
 4. 运行时的回归测试保持通过。
