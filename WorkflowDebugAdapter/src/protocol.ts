@@ -63,6 +63,8 @@ export interface SourceMapEntry {
   readonly column?: number;
 }
 
+export type ScopeKind = 'local' | 'argument' | 'captured' | 'global' | 'object';
+
 export interface PathMappingRule {
   readonly localPath: string;
   readonly remotePath: string;
@@ -118,20 +120,58 @@ export interface StoppedBody {
   readonly row: number;
 }
 
+// `frameId` 直接沿用调用栈索引，适配器后续可以稳定回到同一帧请求变量。
+export interface StackFrameBody {
+  readonly threadId: number;
+  readonly frameId: number;
+  readonly callStackIndex: number;
+  readonly functionName: string;
+  readonly sourceId: number;
+  readonly sourcePath: string;
+  readonly row: number;
+  readonly line: number;
+  readonly column: number;
+  readonly canRequestVariables: boolean;
+}
+
+export interface ScopeEntryBody {
+  readonly name: string;
+  readonly kind: ScopeKind;
+  readonly variablesReference: number;
+  readonly canExpand: boolean;
+  readonly namedVariables: number;
+  readonly indexedVariables: number;
+}
+
+export interface VariableEntryBody {
+  readonly name: string;
+  readonly value: string;
+  readonly type: string;
+  readonly variablesReference: number;
+  readonly canExpand: boolean;
+  readonly namedVariables: number;
+  readonly indexedVariables: number;
+}
+
+// `stackTrace` 同时用于请求与响应：请求只使用查询字段，响应再附带 `totalFrames` 和 `frames`。
 export interface StackTraceBody {
   readonly threadId: number;
   readonly startFrame: number;
   readonly levels: number;
+  readonly totalFrames?: number;
+  readonly frames?: ReadonlyArray<StackFrameBody>;
 }
 
 export interface ScopesBody {
   readonly frameId: number;
+  readonly scopes?: ReadonlyArray<ScopeEntryBody>;
 }
 
 export interface VariablesBody {
   readonly variablesReference: number;
-  readonly scopeKind: 'local' | 'argument' | 'captured' | 'global' | 'object';
+  readonly scopeKind: ScopeKind;
   readonly frameId: number;
+  readonly variables?: ReadonlyArray<VariableEntryBody>;
 }
 
 export interface EvaluateBody {
@@ -151,7 +191,7 @@ export interface StepBody {
 export interface ExceptionBody {
   readonly message: string;
   readonly fatal: boolean;
-  readonly callStack: ReadonlyArray<StackTraceBody>;
+  readonly callStack: ReadonlyArray<StackFrameBody>;
 }
 
 export interface OutputBody {

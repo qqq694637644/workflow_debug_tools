@@ -37,8 +37,47 @@ export class BreakpointRegistry {
     return mergeValidatedState(this.statesById, validation);
   }
 
+  public registerRemoteBreakpoints(body: SetBreakpointsBody): ReadonlyArray<BreakpointValidatedBody> {
+    const canonicalPath = this.resolveCanonicalPath(body.sourcePath);
+    const source = this.sourceCatalog.resolveByPath(canonicalPath);
+    const validations: Array<BreakpointValidatedBody> = [];
+
+    if (source && source.codeIndex !== body.codeIndex) {
+      throw new Error(`源码路径 ${body.sourcePath} 的 codeIndex 不匹配。`);
+    }
+
+    this.clearSource(canonicalPath);
+
+    for (const breakpoint of body.breakpoints) {
+      const verified = this.sourceCatalog.hasRow(body.codeIndex, breakpoint.row);
+      const reason = verified ? undefined : `源码 ${body.sourcePath} 不包含第 ${breakpoint.row + 1} 行。`;
+      const state: BreakpointSyncState = {
+        breakpointId: breakpoint.breakpointId,
+        requestedSourcePath: body.sourcePath,
+        sourcePath: canonicalPath,
+        codeIndex: body.codeIndex,
+        line: breakpoint.row + 1,
+        row: breakpoint.row,
+        column: breakpoint.column,
+        condition: breakpoint.condition,
+        logMessage: breakpoint.logMessage,
+        verified,
+        reason
+      };
+
+      this.statesById.set(breakpoint.breakpointId, state);
+      validations.push({
+        breakpointId: breakpoint.breakpointId,
+        verified,
+        reason
+      });
+    }
+
+    return validations;
+  }
+
   public getBreakpoints(sourcePath: string): ReadonlyArray<BreakpointSyncState> {
-    const canonicalPath = this.sourceCatalog.resolveByPath(sourcePath)?.sourcePath ?? sourcePath.trim().replace(/\\/g, '/');
+    const canonicalPath = this.resolveCanonicalPath(sourcePath);
     return [...this.statesById.values()]
       .filter((state) => state.sourcePath === canonicalPath)
       .sort((left, right) => {
@@ -60,8 +99,23 @@ export class BreakpointRegistry {
     return state ? { ...state } : null;
   }
 
+  public findBreakpoint(codeIndex: number, row: number): BreakpointSyncState | null {
+    for (const state of this.statesById.values()) {
+      if (state.codeIndex === codeIndex && state.row === row) {
+        return { ...state };
+      }
+    }
+
+    return null;
+  }
+
+  public hasBreakpoint(codeIndex: number, row: number): boolean {
+    const state = this.findBreakpoint(codeIndex, row);
+    return state !== null && state.verified === true;
+  }
+
   public clearSource(sourcePath: string): void {
-    const canonicalPath = this.sourceCatalog.resolveByPath(sourcePath)?.sourcePath ?? sourcePath.trim().replace(/\\/g, '/');
+    const canonicalPath = this.resolveCanonicalPath(sourcePath);
     for (const [breakpointId, state] of this.statesById) {
       if (state.sourcePath === canonicalPath) {
         this.statesById.delete(breakpointId);
@@ -71,5 +125,9 @@ export class BreakpointRegistry {
 
   public clear(): void {
     this.statesById.clear();
+  }
+
+  private resolveCanonicalPath(sourcePath: string): string {
+    return this.sourceCatalog.resolveByPath(sourcePath)?.sourcePath ?? sourcePath.trim().replace(/\\/g, '/');
   }
 }
