@@ -742,12 +742,22 @@ export class WorkflowDebugDapServer {
   ): DapVariable {
     return {
       name,
-      value,
+      // VS Code 的 Variables 树不会稳定地直接显示 type，这里把类型并入 value，
+      // 让强类型信息在列表里直接可见，同时保留 type 给 hover 和其他客户端。
+      value: this.formatVariableValue(value, type),
       type,
       variablesReference,
       namedVariables,
       indexedVariables
     };
+  }
+
+  private formatVariableValue(value: string, type: string): string {
+    if (type.length === 0) {
+      return value;
+    }
+
+    return `${value} (${type})`;
   }
 
   private toDapBreakpoint(state: BreakpointSyncState): DapBreakpoint & { readonly verified?: boolean; readonly message?: string } {

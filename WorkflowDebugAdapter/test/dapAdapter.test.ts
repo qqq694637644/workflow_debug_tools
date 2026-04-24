@@ -645,9 +645,11 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       });
       assert.equal(localVariablesResponse.success, true);
       const localVariablesBody = localVariablesResponse.body as {
-        readonly variables: Array<{ readonly name: string; readonly variablesReference: number }>;
+        readonly variables: Array<{ readonly name: string; readonly value: string; readonly type?: string; readonly variablesReference: number }>;
       };
       assert.equal(localVariablesBody.variables[0].name, 'context');
+      assert.equal(localVariablesBody.variables[0].value, '{...} (Context)');
+      assert.equal(localVariablesBody.variables[0].type, 'Context');
       assert.ok(localVariablesBody.variables[0].variablesReference > 0);
 
       const contextVariablesResponse = await client.request('variables', {
