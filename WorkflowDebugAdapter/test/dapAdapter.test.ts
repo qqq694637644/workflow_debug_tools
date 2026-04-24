@@ -217,6 +217,7 @@ async function reservePort(): Promise<number> {
 class DapClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly reader = new DapMessageReader();
+  private readonly receivedMessages: Array<DapMessage> = [];
   private readonly pendingResponses = new Map<number, { resolve: (message: DapResponseMessage) => void; reject: (error: Error) => void }>();
   private readonly pendingEvents = new Array<DapEventMessage>();
   private readonly waiters = new Array<{
@@ -317,7 +318,12 @@ class DapClient {
     return this.stderrChunks.join('');
   }
 
+  public getReceivedMessages(): ReadonlyArray<DapMessage> {
+    return this.receivedMessages;
+  }
+
   private handleMessage(message: DapMessage): void {
+    this.receivedMessages.push(message);
     if (message.type === 'response') {
       const pending = this.pendingResponses.get(message.request_seq);
       if (pending) {
@@ -486,6 +492,11 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       adapterID: 'workflow'
     });
     assert.equal(initializeResponse.success, true);
+    const receivedMessages = client.getReceivedMessages();
+    const initializeResponseIndex = receivedMessages.findIndex((message) => message.type === 'response' && message.request_seq === 1 && message.command === 'initialize');
+    assert.ok(initializeResponseIndex >= 0);
+    const outputBeforeAttach = receivedMessages.find((message) => message.type === 'event' && message.event === 'output');
+    assert.equal(outputBeforeAttach, undefined);
 
     const attachRequest = client.request('attach', {
       host: '127.0.0.1',

@@ -118,6 +118,11 @@ interface FrameIdentity {
   readonly frameId: number;
 }
 
+interface BufferedOutput {
+  readonly output: string;
+  readonly category: DapOutputCategory;
+}
+
 export interface WorkflowDebugDapServerOptions {
   readonly input?: NodeJS.ReadableStream;
   readonly output?: NodeJS.WritableStream;
@@ -143,6 +148,7 @@ export class WorkflowDebugDapServer {
   private activeThreadId: number | null = null;
   private attached = false;
   private terminated = false;
+  private readonly bufferedOutputs: Array<BufferedOutput> = [];
 
   constructor(options: WorkflowDebugDapServerOptions = {}) {
     this.input = options.input ?? process.stdin;
@@ -286,6 +292,7 @@ export class WorkflowDebugDapServer {
     this.log('attach 完成，双方握手成功。');
     this.sendEvent('initialized', {});
     this.sendResponse(message, {});
+    this.flushBufferedOutputs();
   }
 
   private async handleSetBreakpointsRequest(message: DapRequestMessage): Promise<void> {
@@ -417,7 +424,7 @@ export class WorkflowDebugDapServer {
   private installTransportHandlers(transport: BridgeTransport<ProtocolEnvelope>): void {
     transport.onOpen(() => {
       this.log('宿主已连接到调试适配器。');
-      this.sendOutput('WorkflowDebugHost 已连接到调试适配器。', 'stdout');
+      this.sendOutput('WorkflowDebugHost 已连接到调试适配器。', 'console');
     });
 
     transport.onClose(() => {
@@ -917,6 +924,14 @@ export class WorkflowDebugDapServer {
   }
 
   private sendOutput(output: string, category: DapOutputCategory): void {
+    if (!this.attached) {
+      this.bufferedOutputs.push({
+        output,
+        category
+      });
+      return;
+    }
+
     this.sendEvent('output', {
       category,
       output: output.endsWith('\n') ? output : `${output}\n`
@@ -971,12 +986,27 @@ export class WorkflowDebugDapServer {
     return seq;
   }
 
+  private flushBufferedOutputs(): void {
+    if (this.bufferedOutputs.length === 0) {
+      return;
+    }
+
+    const pending = this.bufferedOutputs.splice(0, this.bufferedOutputs.length);
+    for (const item of pending) {
+      this.sendEvent('output', {
+        category: item.category,
+        output: item.output.endsWith('\n') ? item.output : `${item.output}\n`
+      });
+    }
+  }
+
   private writeError(message: string): void {
-    this.error.write(`${message}\n`);
+    this.sendOutput(message, 'stderr');
   }
 
   private log(message: string): void {
-    this.error.write(`[WorkflowDebugAdapter] ${message}\n`);
+    const line = `[WorkflowDebugAdapter] ${message}`;
+    this.sendOutput(line, 'console');
   }
 
 }

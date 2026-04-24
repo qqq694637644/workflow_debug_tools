@@ -7,6 +7,11 @@
   "description": "Workflow 脚本的 VSCode 调试适配器。",
   "main": "dist/src/extension.js",
   "types": "dist/src/index.d.ts",
+  "files": [
+    "dist/src/**",
+    "docs/**",
+    "LICENSE.md"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -14,6 +19,7 @@
     "Debuggers"
   ],
   "activationEvents": [
+    "onDebug",
     "onDebug:workflow"
   ],
   "contributes": {
@@ -58,7 +64,8 @@
             "host": "127.0.0.1",
             "port": 4711,
             "workspaceRoot": "${workspaceFolder}",
-            "pathMapping": []
+            "pathMapping": [],
+            "internalConsoleOptions": "openOnSessionStart"
           }
         ]
       }
@@ -66,7 +73,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node dist/test/sessionMachine.test.js && node dist/test/bridgeTransport.test.js && node dist/test/sourceMapping.test.js && node dist/test/executionControl.test.js && node dist/test/stackTrace.test.js && node dist/test/exceptionPause.test.js && node dist/test/fullFlow.test.js && node dist/test/variableExpansion.test.js && node dist/test/dapAdapter.test.js"
+    "test": "npm run build && node dist/test/sessionMachine.test.js && node dist/test/bridgeTransport.test.js && node dist/test/sourceMapping.test.js && node dist/test/executionControl.test.js && node dist/test/stackTrace.test.js && node dist/test/exceptionPause.test.js && node dist/test/fullFlow.test.js && node dist/test/variableExpansion.test.js && node dist/test/logFormat.test.js && node dist/test/debugAdapterServerHost.test.js && node dist/test/dapAdapter.test.js"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

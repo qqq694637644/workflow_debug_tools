@@ -1,9 +1,79 @@
-// 这里保留一个最小的扩展入口，方便 VSCode 在安装调试器包时完成激活流程。
-// 真正的调试逻辑在 `dapMain.ts` 启动的独立调试适配器进程里。
-export function activate(): void
-{
+import * as vscode from 'vscode';
+import { formatDebugMessage } from './logFormat.js';
+import { WorkflowDebugAdapterServerHost } from './debugAdapterServerHost.js';
+
+let outputChannel: any | null = null;
+let debugServerHost: WorkflowDebugAdapterServerHost | null = null;
+
+function writeLog(message: string): void {
+  const line = `[Workflow 调试器] ${message}`;
+  if (outputChannel) {
+    outputChannel.appendLine(line);
+    return;
+  }
+
+  console.log(line);
 }
 
-export function deactivate(): void
-{
+export async function activate(context: { subscriptions: Array<{ dispose(): void }> }): Promise<void> {
+  outputChannel = vscode.window.createOutputChannel('Workflow 调试器');
+  outputChannel.show(true);
+  writeLog('扩展已激活。');
+
+  debugServerHost = new WorkflowDebugAdapterServerHost({
+    host: '127.0.0.1'
+  });
+  const address = await debugServerHost.start();
+  writeLog(`已启动内嵌调试服务器：127.0.0.1:${address.port}。`);
+
+  const configurationProvider = {
+    resolveDebugConfiguration(_folder: unknown, config: any): any {
+      if (!config || config.type !== 'workflow') {
+        return config;
+      }
+
+      // 参考 LuaPanda 的做法，默认打开内置调试控制台，避免 session 启动后用户看不到任何输出。
+      if (typeof config.internalConsoleOptions !== 'string' || config.internalConsoleOptions.trim().length === 0) {
+        config.internalConsoleOptions = 'openOnSessionStart';
+        writeLog('已为 workflow 调试会话默认设置 internalConsoleOptions=openOnSessionStart。');
+      }
+
+      // 这里不再让 VSCode 拉起外部调试适配器进程，而是像 LuaPanda 一样直接连到内嵌 debugServer。
+      config.debugServer = address.port;
+      writeLog(`已为 workflow 调试会话绑定内嵌调试服务器端口：${address.port}。`);
+
+      return config;
+    }
+  };
+
+  const trackerFactory = {
+    createDebugAdapterTracker(session: any) {
+      writeLog(`创建调试会话追踪器：${session?.type ?? 'workflow'}`);
+      return {
+        onWillReceiveMessage(message: unknown): void {
+          writeLog(`-> ${formatDebugMessage(message)}`);
+        },
+        onDidSendMessage(message: unknown): void {
+          writeLog(`<- ${formatDebugMessage(message)}`);
+        },
+        onError(error: unknown): void {
+          writeLog(`调试适配器错误：${formatDebugMessage(error)}`);
+        },
+        onExit(code: number | undefined, signal: string | undefined): void {
+          writeLog(`调试适配器退出：code=${String(code)} signal=${String(signal)}`);
+        }
+      };
+    }
+  };
+
+  context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('workflow', configurationProvider));
+  context.subscriptions.push(vscode.debug.registerDebugAdapterTrackerFactory('workflow', trackerFactory));
+  context.subscriptions.push(outputChannel);
+}
+
+export async function deactivate(): Promise<void> {
+  await debugServerHost?.dispose();
+  debugServerHost = null;
+  outputChannel?.dispose();
+  outputChannel = null;
 }
