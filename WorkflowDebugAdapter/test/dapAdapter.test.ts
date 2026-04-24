@@ -625,7 +625,7 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       };
       assert.equal(stackTraceBody.stackFrames[0].name, 'RaiseException');
       assert.equal(stackTraceBody.stackFrames[0].source?.path, remotePath);
-      assert.equal(stackTraceBody.stackFrames[0].column, undefined);
+      assert.equal(stackTraceBody.stackFrames[0].column, 1);
 
       const scopesResponse = await client.request('scopes', {
         frameId: stackTraceBody.stackFrames[0].id

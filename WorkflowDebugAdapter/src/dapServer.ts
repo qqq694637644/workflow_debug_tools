@@ -717,6 +717,8 @@ export class WorkflowDebugDapServer {
         name: getFileName(frame.sourcePath)
       },
       line: frame.line,
+      // VS Code 的焦点定位要求列号有效；这里固定到行首，避免把调试光标落到语句内部字符上。
+      column: 1,
       presentationHint: 'normal'
     };
   }
