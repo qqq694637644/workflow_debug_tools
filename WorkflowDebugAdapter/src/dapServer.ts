@@ -436,15 +436,8 @@ export class WorkflowDebugDapServer {
 
   private async handleRestartRequest(message: DapRequestMessage): Promise<void> {
     this.log('收到 restart。');
-    this.gracefulClose = true;
-    this.terminated = true;
-    await this.requestHostDisconnect('restart', true);
     this.sendResponse(message, {});
-    this.sendEvent('terminated', {
-      restart: true
-    });
-    this.cancelReadyWait();
-    void this.disposeTransport();
+    this.log('restartRequest 当前保持为兼容 LuaPanda 的空操作，不主动终结会话。');
   }
 
   private installTransportHandlers(transport: BridgeTransport<ProtocolEnvelope>): void {

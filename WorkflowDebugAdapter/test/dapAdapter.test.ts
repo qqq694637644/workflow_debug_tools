@@ -674,15 +674,10 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
 
       const restartResponse = await client.request('restart');
       assert.equal(restartResponse.success, true);
-      const terminatedEvent = await client.waitForEvent('terminated');
-      assert.equal((terminatedEvent.body as { readonly restart?: boolean } | undefined)?.restart, true);
-      assert.deepEqual(host.disconnectRequests, [
-        {
-          reason: 'restart',
-          restart: true
-        }
-      ]);
-      await waitForPortBindable(port);
+      await delay(100);
+      assert.deepEqual(host.disconnectRequests, []);
+      const terminatedEvents = client.getReceivedMessages().filter((message) => message.type === 'event' && message.event === 'terminated');
+      assert.equal(terminatedEvents.length, 0);
     }
     finally {
       await host.close();
