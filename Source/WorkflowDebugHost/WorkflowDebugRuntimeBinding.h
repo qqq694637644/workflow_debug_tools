@@ -26,6 +26,7 @@ namespace vl
 			class WorkflowDebugSourceCatalog;
 			class WorkflowDebugStackInspector;
 			class WorkflowDebugValueInspector;
+			class WorkflowDebugBridge;
 			class WorkflowDebugRuntimeBinding;
 
 			/// <summary>
@@ -72,7 +73,8 @@ namespace vl
 					WorkflowDebugSessionState*		state,
 					WorkflowDebugSourceCatalog*		sourceCatalog,
 					WorkflowDebugStackInspector*	stackInspector,
-					WorkflowDebugValueInspector*	valueInspector
+					WorkflowDebugValueInspector*	valueInspector,
+					WorkflowDebugBridge*			bridge
 				);
 				void								Unbind();
 				bool								IsBound() const;
@@ -87,6 +89,7 @@ namespace vl
 				WorkflowDebugSourceCatalog*			sourceCatalog = nullptr;
 				WorkflowDebugStackInspector*		stackInspector = nullptr;
 				WorkflowDebugValueInspector*		valueInspector = nullptr;
+				WorkflowDebugBridge*				bridge = nullptr;
 			};
 		}
 	}

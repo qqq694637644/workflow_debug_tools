@@ -35,6 +35,22 @@ namespace vl
 				breakpoints.Clear();
 			}
 
+			void WorkflowDebugBreakpointRegistry::ClearSource(const WString& sourcePath)
+			{
+				if (sourcePath.Length() == 0)
+				{
+					return;
+				}
+
+				for (vint i = breakpoints.Count() - 1; i >= 0; --i)
+				{
+					if (breakpoints[i].sourcePath == sourcePath)
+					{
+						breakpoints.RemoveAt(i);
+					}
+				}
+			}
+
 			vint WorkflowDebugBreakpointRegistry::Count() const
 			{
 				return breakpoints.Count();

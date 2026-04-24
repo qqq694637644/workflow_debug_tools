@@ -10,6 +10,7 @@
 
 #include "../../Source/Helper.h"
 #include "../../../Source/WorkflowDebugHost/WorkflowDebugBreakpointRegistry.h"
+#include "../../../Source/WorkflowDebugHost/WorkflowDebugBridge.h"
 #include "../../../Source/WorkflowDebugHost/WorkflowDebugHost.h"
 #include "../../../Source/WorkflowDebugHost/WorkflowDebugRuntimeBinding.h"
 #include "../../../Source/WorkflowDebugHost/WorkflowDebugSession.h"
@@ -546,6 +547,7 @@ TEST_FILE
 		stackTrace.command = L"stackTrace";
 		stackTrace.sessionId = L"wf-stack";
 		stackTrace.seq = 10;
+		stackTrace.body = L"{\"threadId\":0,\"startFrame\":0,\"levels\":20}";
 		TEST_ASSERT(session.Dispatch(stackTrace) == true);
 
 		WorkflowDebugEnvelope stackTraceResponse;
@@ -553,7 +555,14 @@ TEST_FILE
 		TEST_ASSERT(stackTraceResponse.kind == WorkflowDebugEnvelopeKind::Response);
 		TEST_ASSERT(stackTraceResponse.replyTo == 10);
 		TEST_ASSERT(stackTraceResponse.command == L"stackTrace");
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"levels\":20"));
 		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"totalFrames\":2"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"callStackIndex\":1"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"callStackIndex\":0"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"line\":21"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"line\":13"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"column\":4"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"canRequestVariables\":true"));
 		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"functionName\":\"Main\""));
 		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"functionName\":\"Helper\""));
 		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"sourcePath\":\"D:\\/src\\/main.wf\""));
@@ -587,6 +596,93 @@ TEST_FILE
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"variables\""));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"localValue\""));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"42\""));
+
+		session.Detach();
+	});
+
+	TEST_CASE(L"WorkflowDebugBridge 下发断点事件")
+	{
+		WorkflowDebugSession session(L"wf-breakpoint");
+		session.Attach();
+
+		session.GetSourceCatalog()->RegisterSource(7, L"D:/src/main.wf", 12);
+
+		WorkflowDebugEnvelope setBreakpoints;
+		setBreakpoints.kind = WorkflowDebugEnvelopeKind::Request;
+		setBreakpoints.command = L"setBreakpoints";
+		setBreakpoints.sessionId = L"wf-breakpoint";
+		setBreakpoints.seq = 20;
+		setBreakpoints.body = L"{\"sourcePath\":\"D:/src/main.wf\",\"codeIndex\":7,\"breakpoints\":[{\"breakpointId\":\"wf-bp-1\",\"row\":28,\"condition\":\"x > 0\",\"logMessage\":\"hit\"}]}";
+
+		TEST_ASSERT(session.Dispatch(setBreakpoints) == true);
+
+		WorkflowDebugEnvelope validation;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(validation) == true);
+		TEST_ASSERT(validation.kind == WorkflowDebugEnvelopeKind::Event);
+		TEST_ASSERT(validation.command == L"breakpointValidated");
+		TEST_ASSERT(validation.replyTo == 20);
+		TEST_ASSERT(ContainsSubstring(validation.body, L"\"breakpointId\":\"wf-bp-1\""));
+		TEST_ASSERT(ContainsSubstring(validation.body, L"\"verified\":true"));
+		TEST_ASSERT(!ContainsSubstring(validation.body, L"\"reason\""));
+		TEST_ASSERT(session.GetBreakpointRegistry()->Count() == 1);
+
+		session.Detach();
+	});
+
+	TEST_CASE(L"WorkflowDebugBridge 暂停与异常事件")
+	{
+		WorkflowDebugSession session(L"wf-event");
+		session.Attach();
+
+		collections::List<WorkflowDebugStackFrame> frames;
+		WorkflowDebugStackFrame frame0;
+		frame0.threadId = 2;
+		frame0.frameId = 0;
+		frame0.sourceId = 7;
+		frame0.functionName = L"Main";
+		frame0.sourcePath = L"D:/src/main.wf";
+		frame0.row = 12;
+		frame0.column = 3;
+
+		WorkflowDebugStackFrame frame1 = frame0;
+		frame1.frameId = 1;
+		frame1.functionName = L"Helper";
+		frame1.row = 20;
+		frame1.column = 5;
+
+		frames.Add(frame0);
+		frames.Add(frame1);
+		session.GetStackInspector()->CaptureStack(2, frames);
+
+		session.GetState()->SetLastInboundSeq(30);
+		session.GetState()->SetLastStopped(L"breakpoint", 2, 1, 7, 20);
+		TEST_ASSERT(session.GetBridge()->NotifyStopped() == true);
+
+		WorkflowDebugEnvelope stopped;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(stopped) == true);
+		TEST_ASSERT(stopped.kind == WorkflowDebugEnvelopeKind::Event);
+		TEST_ASSERT(stopped.command == L"stopped");
+		TEST_ASSERT(stopped.replyTo == 30);
+		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"reason\":\"breakpoint\""));
+		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"threadId\":2"));
+		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"frameId\":1"));
+		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"sourceId\":7"));
+		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"row\":20"));
+
+		session.GetState()->SetLastInboundSeq(31);
+		session.GetState()->SetLastStopped(L"exception", 2, 1, 7, 20);
+		TEST_ASSERT(session.GetBridge()->NotifyException(L"boom", true) == true);
+
+		WorkflowDebugEnvelope exceptionEvent;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(exceptionEvent) == true);
+		TEST_ASSERT(exceptionEvent.kind == WorkflowDebugEnvelopeKind::Event);
+		TEST_ASSERT(exceptionEvent.command == L"exception");
+		TEST_ASSERT(exceptionEvent.replyTo == 31);
+		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"message\":\"boom\""));
+		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"fatal\":true"));
+		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"callStack\""));
+		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"functionName\":\"Main\""));
+		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"functionName\":\"Helper\""));
 
 		session.Detach();
 	});

@@ -7,6 +7,7 @@ Workflow::DebugHost
 ***********************************************************************/
 
 #include "WorkflowDebugRuntimeBinding.h"
+#include "WorkflowDebugBridge.h"
 #include "WorkflowDebugSessionState.h"
 #include "WorkflowDebugSourceCatalog.h"
 #include "WorkflowDebugStackInspector.h"
@@ -257,13 +258,15 @@ namespace vl
 				WorkflowDebugSessionState* valueState,
 				WorkflowDebugSourceCatalog* valueSourceCatalog,
 				WorkflowDebugStackInspector* valueStackInspector,
-				WorkflowDebugValueInspector* valueValueInspector
+				WorkflowDebugValueInspector* valueValueInspector,
+				WorkflowDebugBridge* valueBridge
 			)
 			{
 				state = valueState;
 				sourceCatalog = valueSourceCatalog;
 				stackInspector = valueStackInspector;
 				valueInspector = valueValueInspector;
+				bridge = valueBridge;
 			}
 
 			void WorkflowDebugRuntimeBinding::Unbind()
@@ -283,6 +286,7 @@ namespace vl
 				sourceCatalog = nullptr;
 				stackInspector = nullptr;
 				valueInspector = nullptr;
+				bridge = nullptr;
 			}
 
 			bool WorkflowDebugRuntimeBinding::IsBound() const
@@ -387,6 +391,18 @@ namespace vl
 					}
 
 					state->SetLastStopped(reason, threadId, stoppedFrameId, stoppedSourceId, stoppedRow);
+				}
+
+				if (bridge)
+				{
+					if (context->exceptionInfo)
+					{
+						bridge->NotifyException(context->exceptionInfo->message, context->exceptionInfo->fatal);
+					}
+					else
+					{
+						bridge->NotifyStopped();
+					}
 				}
 			}
 		}

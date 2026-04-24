@@ -21,9 +21,11 @@ namespace vl
 		{
 			struct WorkflowDebugBreakpointRecord
 			{
+				WString		breakpointId;
 				WString		sourcePath;
 				vint		codeIndex = -1;
 				vint		row = 0;
+				vint		column = -1;
 				bool		beforeCodegen = true;
 				WString		condition;
 				WString		logMessage;
@@ -42,6 +44,7 @@ namespace vl
 
 				void								SetSourceCatalog(WorkflowDebugSourceCatalog* sourceCatalog);
 				void								Clear();
+				void								ClearSource(const WString& sourcePath);
 				vint								Count() const;
 
 				vint								RegisterBreakpoint(const WorkflowDebugBreakpointRecord& breakpoint);

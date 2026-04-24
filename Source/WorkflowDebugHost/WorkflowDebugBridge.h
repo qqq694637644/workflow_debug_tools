@@ -49,6 +49,8 @@ namespace vl
 				void								Unbind();
 
 				bool								Dispatch(const WorkflowDebugEnvelope& envelope);
+				bool								NotifyStopped();
+				bool								NotifyException(const WString& message, bool fatal);
 
 			private:
 				bool								HandleHello(const WorkflowDebugEnvelope& envelope);
@@ -61,6 +63,7 @@ namespace vl
 				bool								HandleScopes(const WorkflowDebugEnvelope& envelope);
 				bool								HandleVariables(const WorkflowDebugEnvelope& envelope);
 				bool								HandleException(const WorkflowDebugEnvelope& envelope);
+				bool								NotifyBreakpointValidated(const WString& breakpointId, bool verified, const WString& reason, vint replyTo);
 
 			private:
 				WorkflowDebugSessionState*			state = nullptr;

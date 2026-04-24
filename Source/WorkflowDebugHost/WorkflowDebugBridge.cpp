@@ -51,6 +51,13 @@ namespace vl
 					return node;
 				}
 
+				static Ptr<JsonLiteral> CreateLiteral(bool value)
+				{
+					auto node = Ptr(new JsonLiteral);
+					node->value = value ? JsonLiteralValue::True : JsonLiteralValue::False;
+					return node;
+				}
+
 				static Ptr<JsonArray> CreateArray()
 				{
 					return Ptr(new JsonArray);
@@ -77,10 +84,10 @@ namespace vl
 					return JsonParse(text, parser);
 				}
 
-				static JsonObject* ParseJsonObject(const WString& text)
+				static Ptr<JsonObject> ParseJsonObject(const WString& text)
 				{
 					auto node = ParseJsonText(text);
-					return dynamic_cast<JsonObject*>(node.Obj());
+					return node.Cast<JsonObject>();
 				}
 
 				static bool TryGetField(JsonObject* object, const WString& name, Ptr<JsonNode>& value)
@@ -100,6 +107,18 @@ namespace vl
 					}
 
 					return false;
+				}
+
+				static bool TryGetArrayField(JsonObject* object, const WString& name, JsonArray*& value)
+				{
+					Ptr<JsonNode> node;
+					if (!TryGetField(object, name, node))
+					{
+						return false;
+					}
+
+					value = dynamic_cast<JsonArray*>(node.Obj());
+					return value != nullptr;
 				}
 
 				static bool TryReadStringField(JsonObject* object, const WString& name, WString& value)
@@ -210,12 +229,21 @@ namespace vl
 				{
 					auto object = CreateObject();
 					AddField(object.Obj(), L"frameId", CreateNumber(frame.frameId));
+					AddField(object.Obj(), L"callStackIndex", CreateNumber(frame.frameId));
 					AddField(object.Obj(), L"threadId", CreateNumber(frame.threadId));
 					AddField(object.Obj(), L"sourceId", CreateNumber(frame.sourceId));
-					AddField(object.Obj(), L"sourcePath", CreateString(frame.sourcePath));
-					AddField(object.Obj(), L"functionName", CreateString(frame.functionName));
+					auto sourcePath = frame.sourcePath.Length() > 0
+						? frame.sourcePath
+						: L"unknown://source/" + itow(frame.sourceId >= 0 ? frame.sourceId : 0);
+					auto functionName = frame.functionName.Length() > 0
+						? frame.functionName
+						: L"frame-" + itow(frame.frameId);
+					AddField(object.Obj(), L"sourcePath", CreateString(sourcePath));
+					AddField(object.Obj(), L"functionName", CreateString(functionName));
+					AddField(object.Obj(), L"line", CreateNumber(frame.row >= 0 ? frame.row + 1 : 1));
 					AddField(object.Obj(), L"row", CreateNumber(frame.row));
-					AddField(object.Obj(), L"column", CreateNumber(frame.column));
+					AddField(object.Obj(), L"column", CreateNumber(frame.column >= 0 ? frame.column + 1 : 1));
+					AddField(object.Obj(), L"canRequestVariables", CreateLiteral(true));
 					return object;
 				}
 
@@ -258,7 +286,7 @@ namespace vl
 					auto body = ParseJsonObject(envelope.body);
 					if (body)
 					{
-						TryReadNumberField(body, L"threadId", threadId);
+						TryReadNumberField(body.Obj(), L"threadId", threadId);
 					}
 
 					if (threadId < 0 && state)
@@ -279,7 +307,7 @@ namespace vl
 					auto body = ParseJsonObject(envelope.body);
 					if (body)
 					{
-						TryReadNumberField(body, L"frameId", frameId);
+						TryReadNumberField(body.Obj(), L"frameId", frameId);
 					}
 
 					if (frameId < 0 && state)
@@ -300,7 +328,7 @@ namespace vl
 					auto body = ParseJsonObject(envelope.body);
 					if (body)
 					{
-						TryReadNumberField(body, L"startFrame", startFrame);
+						TryReadNumberField(body.Obj(), L"startFrame", startFrame);
 					}
 					if (startFrame < 0)
 					{
@@ -315,7 +343,10 @@ namespace vl
 					auto body = ParseJsonObject(envelope.body);
 					if (body)
 					{
-						TryReadNumberField(body, L"levels", levels);
+						if (!TryReadNumberField(body.Obj(), L"levels", levels))
+						{
+							levels = -1;
+						}
 					}
 					return levels;
 				}
@@ -326,7 +357,7 @@ namespace vl
 					auto body = ParseJsonObject(envelope.body);
 					if (body)
 					{
-						TryReadScopeKindField(body, L"scopeKind", kind);
+						TryReadScopeKindField(body.Obj(), L"scopeKind", kind);
 					}
 					(void)state;
 					return kind;
@@ -349,20 +380,31 @@ namespace vl
 						stackInspector->TryGetFrames(threadId, frames);
 					}
 
+					collections::List<WorkflowDebugStackFrame> orderedFrames;
+					for (vint i = frames.Count() - 1; i >= 0; --i)
+					{
+						orderedFrames.Add(frames[i]);
+					}
+
 					auto array = CreateArray();
-					vint endFrame = frames.Count();
+					vint endFrame = orderedFrames.Count();
 					if (levels >= 0 && startFrame + levels < endFrame)
 					{
 						endFrame = startFrame + levels;
 					}
 					for (vint i = startFrame; i < endFrame; i++)
 					{
-						array->items.Add(BuildStackFrame(frames[i]));
+						array->items.Add(BuildStackFrame(orderedFrames[i]));
 					}
+
+					vint returnedLevels = levels >= 0
+						? levels
+						: (orderedFrames.Count() > startFrame ? orderedFrames.Count() - startFrame : 0);
 
 					AddField(body.Obj(), L"threadId", CreateNumber(threadId));
 					AddField(body.Obj(), L"startFrame", CreateNumber(startFrame));
-					AddField(body.Obj(), L"totalFrames", CreateNumber(frames.Count()));
+					AddField(body.Obj(), L"levels", CreateNumber(returnedLevels));
+					AddField(body.Obj(), L"totalFrames", CreateNumber(orderedFrames.Count()));
 					AddField(body.Obj(), L"frames", array);
 					return body;
 				}
@@ -456,6 +498,94 @@ namespace vl
 					}
 
 					return transport->Send(response);
+				}
+
+				static bool SendEvent(
+					WorkflowDebugSessionState* state,
+					WorkflowDebugTransport* transport,
+					const WString& command,
+					Ptr<JsonNode> body,
+					vint replyTo = -1
+				)
+				{
+					if (!transport || !state)
+					{
+						return false;
+					}
+
+					auto snapshot = state->Snapshot();
+					WorkflowDebugEnvelope event;
+					event.kind = WorkflowDebugEnvelopeKind::Event;
+					event.command = command;
+					event.sessionId = snapshot.sessionId;
+					event.replyTo = replyTo > 0 ? replyTo : (snapshot.lastInboundSeq > 0 ? snapshot.lastInboundSeq : -1);
+					event.body = SerializeJsonNode(body);
+
+					auto nextSeq = state->GetLastOutboundSeq() + 1;
+					state->SetLastOutboundSeq(nextSeq);
+					event.seq = nextSeq;
+					return transport->Send(event);
+				}
+
+				static Ptr<JsonNode> BuildBreakpointValidatedBody(const WString& breakpointId, bool verified, const WString& reason)
+				{
+					auto body = CreateObject();
+					AddField(body.Obj(), L"breakpointId", CreateString(breakpointId));
+					AddField(body.Obj(), L"verified", CreateLiteral(verified));
+					if (reason.Length() > 0)
+					{
+						AddField(body.Obj(), L"reason", CreateString(reason));
+					}
+					return body;
+				}
+
+				static Ptr<JsonNode> BuildStoppedBody(WorkflowDebugSessionState* state)
+				{
+					auto body = CreateObject();
+					if (!state)
+					{
+						return body;
+					}
+
+					auto snapshot = state->Snapshot();
+					AddField(body.Obj(), L"reason", CreateString(snapshot.lastStoppedReason.Length() > 0 ? snapshot.lastStoppedReason : L"pause"));
+					AddField(body.Obj(), L"threadId", CreateNumber(snapshot.lastStoppedThreadId));
+					AddField(body.Obj(), L"frameId", CreateNumber(snapshot.lastStoppedFrameId));
+					AddField(body.Obj(), L"sourceId", CreateNumber(snapshot.lastStoppedSourceId));
+					AddField(body.Obj(), L"row", CreateNumber(snapshot.lastStoppedRow));
+					return body;
+				}
+
+				static Ptr<JsonNode> BuildExceptionBody(
+					const WString& message,
+					bool fatal,
+					WorkflowDebugSessionState* state,
+					WorkflowDebugStackInspector* stackInspector
+				)
+				{
+					auto body = CreateObject();
+					AddField(body.Obj(), L"message", CreateString(message));
+					AddField(body.Obj(), L"fatal", CreateLiteral(fatal));
+
+					vint threadId = -1;
+					if (state)
+					{
+						threadId = state->Snapshot().lastStoppedThreadId;
+					}
+
+					collections::List<WorkflowDebugStackFrame> frames;
+					if (stackInspector && threadId >= 0)
+					{
+						stackInspector->TryGetFrames(threadId, frames);
+					}
+
+					auto array = CreateArray();
+					for (vint i = frames.Count() - 1; i >= 0; --i)
+					{
+						array->items.Add(BuildStackFrame(frames[i]));
+					}
+					AddField(body.Obj(), L"callStack", array);
+					return body;
 				}
 			}
 
@@ -586,11 +716,72 @@ namespace vl
 
 			bool WorkflowDebugBridge::HandleSetBreakpoints(const WorkflowDebugEnvelope& envelope)
 			{
-				(void)envelope;
+				auto body = ParseJsonObject(envelope.body);
+				if (!body)
+				{
+					return false;
+				}
+
+				WString sourcePath;
+				vint codeIndex = -1;
+				JsonArray* breakpointsArray = nullptr;
+				if (!TryReadStringField(body.Obj(), L"sourcePath", sourcePath)
+					|| !TryReadNumberField(body.Obj(), L"codeIndex", codeIndex)
+					|| !TryGetArrayField(body.Obj(), L"breakpoints", breakpointsArray))
+				{
+					return false;
+				}
+
 				if (breakpointRegistry)
 				{
-					breakpointRegistry->Clear();
+					breakpointRegistry->ClearSource(sourcePath);
 				}
+
+				for (auto breakpointNode : breakpointsArray->items)
+				{
+					auto breakpointObject = dynamic_cast<JsonObject*>(breakpointNode.Obj());
+					if (!breakpointObject)
+					{
+						return false;
+					}
+
+					WString breakpointId;
+					vint row = -1;
+					vint column = -1;
+					WString condition;
+					WString logMessage;
+					if (!TryReadStringField(breakpointObject, L"breakpointId", breakpointId)
+						|| !TryReadNumberField(breakpointObject, L"row", row))
+					{
+						return false;
+					}
+
+					TryReadNumberField(breakpointObject, L"column", column);
+					TryReadStringField(breakpointObject, L"condition", condition);
+					TryReadStringField(breakpointObject, L"logMessage", logMessage);
+
+					WorkflowDebugBreakpointRecord record;
+					record.breakpointId = breakpointId;
+					record.sourcePath = sourcePath;
+					record.codeIndex = codeIndex;
+					record.row = row;
+					record.column = column;
+					record.condition = condition;
+					record.logMessage = logMessage;
+
+					if (!breakpointRegistry)
+					{
+						return false;
+					}
+
+					auto breakpointIndex = breakpointRegistry->RegisterBreakpoint(record);
+					const auto& storedBreakpoint = breakpointRegistry->GetBreakpoints()[breakpointIndex];
+					if (!NotifyBreakpointValidated(storedBreakpoint.breakpointId, storedBreakpoint.verified, storedBreakpoint.reason, envelope.seq))
+					{
+						return false;
+					}
+				}
+
 				return true;
 			}
 
@@ -675,6 +866,21 @@ namespace vl
 					state->SetLastStopped(L"exception", -1, -1, -1, -1);
 				}
 				return true;
+			}
+
+			bool WorkflowDebugBridge::NotifyStopped()
+			{
+				return SendEvent(state, transport, L"stopped", BuildStoppedBody(state));
+			}
+
+			bool WorkflowDebugBridge::NotifyException(const WString& message, bool fatal)
+			{
+				return SendEvent(state, transport, L"exception", BuildExceptionBody(message, fatal, state, stackInspector));
+			}
+
+			bool WorkflowDebugBridge::NotifyBreakpointValidated(const WString& breakpointId, bool verified, const WString& reason, vint replyTo)
+			{
+				return SendEvent(state, transport, L"breakpointValidated", BuildBreakpointValidatedBody(breakpointId, verified, reason), replyTo);
 			}
 		}
 	}

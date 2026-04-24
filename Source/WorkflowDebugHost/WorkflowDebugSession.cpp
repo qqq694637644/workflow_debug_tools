@@ -64,7 +64,7 @@ namespace vl
 			{
 				state->Attach(sessionId);
 				runtimeBinding->Bind(debugger);
-				runtimeBinding->AttachDebugData(state.Obj(), sourceCatalog.Obj(), stackInspector.Obj(), valueInspector.Obj());
+				runtimeBinding->AttachDebugData(state.Obj(), sourceCatalog.Obj(), stackInspector.Obj(), valueInspector.Obj(), bridge.Obj());
 				transport->Open();
 				sourceCatalog->Clear();
 				breakpointRegistry->Clear();
@@ -75,7 +75,7 @@ namespace vl
 			void WorkflowDebugSession::Detach()
 			{
 				runtimeBinding->Unbind();
-				runtimeBinding->AttachDebugData(nullptr, nullptr, nullptr, nullptr);
+				runtimeBinding->AttachDebugData(nullptr, nullptr, nullptr, nullptr, nullptr);
 				transport->Close();
 				if (state)
 				{
