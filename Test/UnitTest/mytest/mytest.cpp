@@ -31,9 +31,18 @@ namespace
 {
 	struct ScriptCase
 	{
-		const wchar_t* name;
-		const wchar_t* fileName;
-		const wchar_t* description;
+		const wchar_t*			name;
+		const wchar_t*			fileName;
+		const wchar_t*			description;
+		const wchar_t* const*	extraFileNames = nullptr;
+		vint					extraFileCount = 0;
+	};
+
+	static const wchar_t* NestedCallsExtraFiles[] =
+	{
+		L"Scripts\\NestedCalls\\Level1.txt",
+		L"Scripts\\NestedCalls\\Level2.txt",
+		L"Scripts\\NestedCalls\\Level3.txt",
 	};
 
 #if defined VCZH_MSVC && defined VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
@@ -114,6 +123,16 @@ namespace
 		return false;
 	}
 
+	static void CollectScriptFiles(const ScriptCase& scriptCase, List<WString>& fileNames)
+	{
+		fileNames.Clear();
+		fileNames.Add(scriptCase.fileName);
+		for (vint i = 0; i < scriptCase.extraFileCount; i++)
+		{
+			fileNames.Add(scriptCase.extraFileNames[i]);
+		}
+	}
+
 	static DebugLaunchOptions ParseDebugLaunchOptions(int argc, wchar_t* argv[])
 	{
 		DebugLaunchOptions options;
@@ -164,6 +183,7 @@ namespace
 	{
 		List<WString> candidates;
 		candidates.Add(relativeFileName);
+		candidates.Add(WString(L"mytest\\") + relativeFileName);
 		candidates.Add(WString(L"..\\") + relativeFileName);
 		candidates.Add(WString(L"..\\..\\") + relativeFileName);
 		candidates.Add(WString(L"..\\..\\..\\") + relativeFileName);
@@ -201,6 +221,7 @@ namespace
 	{
 		List<WString> candidates;
 		candidates.Add(relativeFileName);
+		candidates.Add(WString(L"mytest\\") + relativeFileName);
 		candidates.Add(WString(L"..\\") + relativeFileName);
 		candidates.Add(WString(L"..\\..\\") + relativeFileName);
 		candidates.Add(WString(L"..\\..\\..\\") + relativeFileName);
@@ -227,37 +248,51 @@ namespace
 		return WString::Empty;
 	}
 
-	static void BuildDebugSourceMap(const ScriptCase& scriptCase, List<WorkflowDebugSourceRecord>& sourceMap)
+	static void BuildDebugSourceMap(const List<WString>& fileNames, List<WorkflowDebugSourceRecord>& sourceMap)
 	{
 		sourceMap.Clear();
 
-		auto sourcePath = ResolveScriptPath(scriptCase.fileName);
-		List<WString> lines;
-		CHECK_ERROR(File(sourcePath).ReadAllLinesByBom(lines), L"读取脚本文件行数失败。");
-
-		for (vint row = 0; row < lines.Count(); row++)
+		// 多文件脚本的 codeIndex 必须和 moduleCodes 的顺序完全一致，否则断点和调用栈会映射到错误文件。
+		for (vint codeIndex = 0; codeIndex < fileNames.Count(); codeIndex++)
 		{
-			WorkflowDebugSourceRecord record;
-			record.codeIndex = 0;
-			record.sourcePath = sourcePath;
-			record.row = row;
-			sourceMap.Add(record);
+			auto sourcePath = ResolveScriptPath(fileNames[codeIndex]);
+			List<WString> lines;
+			CHECK_ERROR(File(sourcePath).ReadAllLinesByBom(lines), L"读取脚本文件行数失败。");
+
+			for (vint row = 0; row < lines.Count(); row++)
+			{
+				WorkflowDebugSourceRecord record;
+				record.codeIndex = codeIndex;
+				record.sourcePath = sourcePath;
+				record.row = row;
+				sourceMap.Add(record);
+			}
 		}
 	}
 #endif
 
 	bool RunScriptCase(const ScriptCase& scriptCase)
 	{
+		List<WString> scriptFiles;
+		CollectScriptFiles(scriptCase, scriptFiles);
+
 		Console::WriteLine(L"");
 		Console::WriteLine(L"==============================");
 		Console::WriteLine(L"测试场景： " + WString(scriptCase.name));
 		Console::WriteLine(L"文件路径： " + WString(scriptCase.fileName));
+		for (vint i = 1; i < scriptFiles.Count(); i++)
+		{
+			Console::WriteLine(L"附加模块： " + scriptFiles[i]);
+		}
 		Console::WriteLine(L"说明： " + WString(scriptCase.description));
 		Console::WriteLine(L"正在读取并编译脚本。");
 
 		Parser parser;
 		List<WString> moduleCodes;
-		moduleCodes.Add(ReadScriptText(scriptCase.fileName));
+		for (auto&& fileName : scriptFiles)
+		{
+			moduleCodes.Add(ReadScriptText(fileName));
+		}
 
 		List<ParsingError> errors;
 		auto assembly = Compile(parser, WfCpuArchitecture::AsExecutable, moduleCodes, errors);
@@ -276,7 +311,7 @@ namespace
 		if (gWorkflowDebugSession)
 		{
 			List<WorkflowDebugSourceRecord> sourceMap;
-			BuildDebugSourceMap(scriptCase, sourceMap);
+			BuildDebugSourceMap(scriptFiles, sourceMap);
 			gWorkflowDebugSession->SetSourceMap(sourceMap);
 			gWorkflowDebugSession->SetAssembly(assembly);
 			Console::WriteLine(L"正在发送 Workflow 调试 hello。");
@@ -305,6 +340,7 @@ namespace
 		{L"ClassMethod",      L"Scripts\\ClassMethod.txt",      L"类、方法、属性和事件。"},
 		{L"ClassCtor",        L"Scripts\\ClassCtor.txt",        L"构造函数和继承。"},
 		{L"TryCatch",         L"Scripts\\TryCatch.txt",         L"异常、捕获和 finally。"},
+		{L"NestedCalls",      L"Scripts\\NestedCalls\\Main.txt",L"多脚本嵌套调用。", NestedCallsExtraFiles, sizeof(NestedCallsExtraFiles) / sizeof(NestedCallsExtraFiles[0])},
 		{L"BindSimple",       L"Scripts\\BindSimple.txt",       L"绑定表达式和观察式更新。"},
 	};
 }

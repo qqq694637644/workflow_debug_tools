@@ -1,0 +1,9 @@
+module nestedcalls_level1;
+using system::*;
+using nestedcalls_level2::*;
+
+func EnterLevel1(prefix : string): string
+{
+	var level1 = prefix & "->L1";
+	return EnterLevel2(level1);
+}

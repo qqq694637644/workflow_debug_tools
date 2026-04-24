@@ -1,0 +1,8 @@
+module nestedcalls_level3;
+using system::*;
+
+func EnterLevel3(prefix : string): string
+{
+	var level3 = prefix & "->L3";
+	return level3;
+}

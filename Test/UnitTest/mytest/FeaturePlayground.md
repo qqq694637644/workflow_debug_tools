@@ -237,3 +237,25 @@ namespace test
 7. `bind` 和观察式表达式
 
 这些特性更能体现 Workflow 不只是“语法像脚本”，而是偏工程化、偏宿主互操作的语言。
+
+## 11. 多脚本嵌套调用
+
+如果你想测试多文件模块和跨文件调用，可以直接运行新增的 `NestedCalls` 场景。它由四个脚本文件组成，函数调用顺序是：
+
+1. `Scripts\NestedCalls\Main.txt`
+2. `Scripts\NestedCalls\Level1.txt`
+3. `Scripts\NestedCalls\Level2.txt`
+4. `Scripts\NestedCalls\Level3.txt`
+
+看点：
+
+- 每一层都在独立脚本文件里
+- 模块之间通过 `using` 互相引用
+- 运行时可以观察到完整的跨文件调用栈
+- 调试时也能验证源码映射是否按文件顺序对齐
+
+建议的运行方式是：
+
+```powershell
+Test\UnitTest\mytest\x64\Debug\mytest.exe NestedCalls
+```

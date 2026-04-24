@@ -553,6 +553,7 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
     });
     assert.equal(initializeResponse.success, true);
     assert.equal((initializeResponse.body as { readonly supportsRestartRequest?: boolean } | undefined)?.supportsRestartRequest, true);
+    assert.equal((initializeResponse.body as { readonly supportsVariableType?: boolean } | undefined)?.supportsVariableType, true);
     const receivedMessages = client.getReceivedMessages();
     const initializeResponseIndex = receivedMessages.findIndex((message) => message.type === 'response' && message.request_seq === 1 && message.command === 'initialize');
     assert.ok(initializeResponseIndex >= 0);

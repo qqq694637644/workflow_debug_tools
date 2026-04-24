@@ -1,0 +1,9 @@
+module nestedcalls_main;
+using system::*;
+using nestedcalls_level1::*;
+
+func main(): string
+{
+	var root = "main";
+	return EnterLevel1(root);
+}

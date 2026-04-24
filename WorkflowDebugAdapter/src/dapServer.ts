@@ -665,6 +665,7 @@ export class WorkflowDebugDapServer {
     return {
       supportsConfigurationDoneRequest: true,
       supportsContinueOnTerminateRequest: false,
+      supportsVariableType: true,
       supportsEvaluateForHovers: false,
       supportsFunctionBreakpoints: false,
       supportsConditionalBreakpoints: false,
