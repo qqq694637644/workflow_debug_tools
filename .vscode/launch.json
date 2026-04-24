@@ -1,0 +1,57 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "WorkflowDebugAdapter: 第一阶段烟雾测试",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/WorkflowDebugAdapter/dist/test/fullFlow.test.js",
+      "cwd": "${workspaceFolder}/WorkflowDebugAdapter",
+      "preLaunchTask": "WorkflowDebugAdapter: 构建",
+      "runtimeArgs": [
+        "--enable-source-maps"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/WorkflowDebugAdapter/dist/**/*.js"
+      ],
+      "sourceMaps": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Workflow RuntimeTest x64",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\Test\\UnitTest\\x64\\Debug\\RuntimeTest.exe",
+      "args": [
+        "/C"
+      ],
+      "cwd": "${workspaceFolder}\\Test\\UnitTest",
+      "preLaunchTask": "Workflow: 构建 RuntimeTest x64",
+      "externalConsole": false
+    },
+    {
+      "name": "Workflow RuntimeTest Win32",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\Test\\UnitTest\\Debug\\RuntimeTest.exe",
+      "args": [
+        "/C"
+      ],
+      "cwd": "${workspaceFolder}\\Test\\UnitTest",
+      "preLaunchTask": "Workflow: 构建 RuntimeTest Win32",
+      "externalConsole": false
+    },
+    {
+    "name": "附加到 Workflow",
+    "type": "workflow",
+    "request": "attach",
+    "host": "127.0.0.1",
+    "port": 4711,
+    "workspaceRoot": "${workspaceFolder}",
+    "pathMapping": []
+    }
+  ]
+}

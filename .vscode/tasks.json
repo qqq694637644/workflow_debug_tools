@@ -1,0 +1,101 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Workflow: 构建 RuntimeTest x64",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        ".github\\Scripts\\copilotBuild.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Workflow: 构建 RuntimeTest Win32",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        ".github\\Scripts\\copilotBuild.py",
+        "--platform",
+        "Win32"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "WorkflowDebugAdapter: 构建",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}\\WorkflowDebugAdapter"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "WorkflowDebugAdapter: 全量测试",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "test"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}\\WorkflowDebugAdapter"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Workflow: 运行 RuntimeTest x64",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$env:CDBPATH='C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x64\\cdb.exe'; & \"${workspaceFolder}\\.github\\Scripts\\copilotExecute.ps1\" -Mode UnitTest -Executable RuntimeTest -Configuration Debug -Platform x64"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}\\Test\\UnitTest"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Workflow: 运行 RuntimeTest Win32",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$env:CDBPATH='C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x64\\cdb.exe'; & \"${workspaceFolder}\\.github\\Scripts\\copilotExecute.ps1\" -Mode UnitTest -Executable RuntimeTest -Configuration Debug -Platform Win32"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}\\Test\\UnitTest"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Workflow: 第一阶段验证",
+      "dependsOn": [
+        "Workflow: 构建 RuntimeTest x64",
+        "Workflow: 构建 RuntimeTest Win32",
+        "WorkflowDebugAdapter: 全量测试",
+        "Workflow: 运行 RuntimeTest x64",
+        "Workflow: 运行 RuntimeTest Win32"
+      ],
+      "dependsOrder": "sequence",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

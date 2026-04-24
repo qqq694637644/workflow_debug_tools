@@ -1,5 +1,16 @@
 # 第一阶段验证清单
 
+## VSCode 入口
+
+1. 打开仓库根目录 `D:\repos\Workflow-master`。
+2. 在 VSCode 的“运行和调试”面板里可以直接选下面的配置：
+   - `WorkflowDebugAdapter: 第一阶段烟雾测试`
+   - `Workflow RuntimeTest x64`
+   - `Workflow RuntimeTest Win32`
+3. 在 VSCode 的“任务”面板里可以直接运行：
+   - `Workflow: 第一阶段验证`
+4. 这套配置用于验证第一阶段成果，不是最终的 Workflow 调试扩展入口。
+
 ## 自动化验证
 
 1. 进入 `WorkflowDebugAdapter` 目录。

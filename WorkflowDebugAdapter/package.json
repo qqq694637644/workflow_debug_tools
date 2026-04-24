@@ -3,11 +3,70 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "displayName": "Workflow 调试器",
+  "description": "Workflow 脚本的 VSCode 调试适配器。",
+  "main": "dist/src/extension.js",
+  "types": "dist/src/index.d.ts",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers"
+  ],
+  "activationEvents": [
+    "onDebug:workflow"
+  ],
+  "contributes": {
+    "debuggers": [
+      {
+        "type": "workflow",
+        "label": "Workflow 调试器",
+        "program": "./dist/src/dapMain.js",
+        "runtime": "node",
+        "configurationAttributes": {
+          "attach": {
+            "required": [
+              "port",
+              "workspaceRoot"
+            ],
+            "properties": {
+              "host": {
+                "type": "string",
+                "default": "127.0.0.1",
+                "description": "WorkflowDebugHost 监听的主机地址。"
+              },
+              "port": {
+                "type": "number",
+                "description": "WorkflowDebugHost 连接到调试适配器的端口。"
+              },
+              "workspaceRoot": {
+                "type": "string",
+                "description": "当前工作区根目录，用来解析本地源码路径。"
+              },
+              "pathMapping": {
+                "type": "array",
+                "description": "本地路径与远端路径的映射规则。"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "name": "附加到 Workflow",
+            "type": "workflow",
+            "request": "attach",
+            "host": "127.0.0.1",
+            "port": 4711,
+            "workspaceRoot": "${workspaceFolder}",
+            "pathMapping": []
+          }
+        ]
+      }
+    ]
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node dist/test/sessionMachine.test.js && node dist/test/bridgeTransport.test.js && node dist/test/sourceMapping.test.js && node dist/test/executionControl.test.js && node dist/test/stackTrace.test.js && node dist/test/exceptionPause.test.js && node dist/test/fullFlow.test.js && node dist/test/variableExpansion.test.js"
+    "test": "npm run build && node dist/test/sessionMachine.test.js && node dist/test/bridgeTransport.test.js && node dist/test/sourceMapping.test.js && node dist/test/executionControl.test.js && node dist/test/stackTrace.test.js && node dist/test/exceptionPause.test.js && node dist/test/fullFlow.test.js && node dist/test/variableExpansion.test.js && node dist/test/dapAdapter.test.js"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

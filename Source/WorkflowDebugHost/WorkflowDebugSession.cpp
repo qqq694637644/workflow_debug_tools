@@ -63,13 +63,20 @@ namespace vl
 			void WorkflowDebugSession::Attach()
 			{
 				state->Attach(sessionId);
-				runtimeBinding->Bind(debugger);
-				runtimeBinding->AttachDebugData(state.Obj(), sourceCatalog.Obj(), stackInspector.Obj(), valueInspector.Obj(), bridge.Obj());
-				transport->Open();
 				sourceCatalog->Clear();
 				breakpointRegistry->Clear();
 				stackInspector->Clear();
 				valueInspector->Clear();
+				runtimeBinding->Bind(debugger);
+				runtimeBinding->AttachDebugData(state.Obj(), sourceCatalog.Obj(), stackInspector.Obj(), valueInspector.Obj(), bridge.Obj());
+				if (transport->GetEndpointPort() > 0)
+				{
+					CHECK_ERROR(transport->Connect(), L"无法连接到调试适配器。");
+				}
+				else
+				{
+					transport->Open();
+				}
 			}
 
 			void WorkflowDebugSession::Detach()

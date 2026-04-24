@@ -50,12 +50,14 @@ export class SourceCatalog {
   private readonly entriesByCodeIndex = new Map<number, MutableSourceCatalogEntry>();
   private readonly entriesByPath = new Map<string, MutableSourceCatalogEntry>();
   private readonly aliases = new Map<string, string>();
+  private readonly aliasesByRemote = new Map<string, string>();
   private entryCount = 0;
 
   public clear(): void {
     this.entriesByCodeIndex.clear();
     this.entriesByPath.clear();
     this.aliases.clear();
+    this.aliasesByRemote.clear();
     this.entryCount = 0;
   }
 
@@ -115,6 +117,9 @@ export class SourceCatalog {
     }
 
     this.aliases.set(localPath, remotePath);
+    if (!this.aliasesByRemote.has(remotePath)) {
+      this.aliasesByRemote.set(remotePath, localPath);
+    }
   }
 
   public registerPathMappings(rules: ReadonlyArray<PathMappingRule>): void {
@@ -140,6 +145,11 @@ export class SourceCatalog {
 
   public resolveSourcePath(codeIndex: number): string | null {
     return this.resolveByCodeIndex(codeIndex)?.sourcePath ?? null;
+  }
+
+  public resolveDisplayPath(sourcePath: string): string {
+    const canonicalPath = this.resolveCanonicalPath(sourcePath);
+    return this.aliasesByRemote.get(canonicalPath) ?? canonicalPath;
   }
 
   public findRow(codeIndex: number, row: number): SourceMapEntry | null {

@@ -178,3 +178,4 @@ $RECYCLE.BIN/
 .DS_Store
 LuaPanda-master/
 __pycache__/
+*.vsix

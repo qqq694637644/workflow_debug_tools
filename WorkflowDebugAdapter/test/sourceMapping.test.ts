@@ -10,6 +10,7 @@ import {
 
 const remotePath = 'D:/repos/Workflow-master/Test/Resources/Rpc/RequestService.txt';
 const localPath = 'C:/workspace/Workflow-master/Test/Resources/Rpc/RequestService.txt';
+const normalizedLocalPath = localPath.replace(/^([A-Z]):/, (_, drive: string) => `${drive.toLowerCase()}:`);
 
 const sourceMap = [
   {
@@ -55,6 +56,7 @@ function verifySourceCatalogAndBreakpointRegistry(): void {
   assert.equal(catalog.getEntryCount(), 2);
   assert.equal(catalog.resolveCodeIndex(localPath), 7);
   assert.equal(catalog.resolveSourcePath(7), remotePath);
+  assert.equal(catalog.resolveDisplayPath(remotePath), normalizedLocalPath);
   assert.deepEqual(catalog.resolveByCodeIndex(7)?.rows, [9, 10]);
 
   const registry = new BreakpointRegistry(catalog);

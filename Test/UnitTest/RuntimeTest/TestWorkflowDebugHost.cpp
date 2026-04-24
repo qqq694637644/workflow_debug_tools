@@ -96,6 +96,26 @@ static bool WaitForEnvelope(WorkflowDebugTransport& transport, WorkflowDebugEnve
 	}
 }
 
+static bool WaitForFlag(std::atomic<bool>& flag, vint timeoutMilliseconds)
+{
+	auto begin = std::chrono::steady_clock::now();
+	while (true)
+	{
+		if (flag.load())
+		{
+			return true;
+		}
+
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count();
+		if (elapsed >= timeoutMilliseconds)
+		{
+			return false;
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+}
+
 static SOCKET CreateLoopbackListener(vint& port)
 {
 	WSADATA wsaData;
@@ -493,6 +513,45 @@ TEST_FILE
 		session.Detach();
 		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Closed);
 		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+	});
+
+	TEST_CASE(L"WorkflowDebugSession 端点连接")
+	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+		std::atomic<bool> accepted = false;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				return;
+			}
+
+			accepted = true;
+			char buffer[1];
+			while (recv(clientSocket, buffer, sizeof(buffer), 0) > 0)
+			{
+			}
+			shutdown(clientSocket, SD_BOTH);
+			closesocket(clientSocket);
+		});
+
+		WorkflowDebugSession session(L"wf-connect");
+		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
+		session.Attach();
+
+		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
+		TEST_ASSERT(session.GetTransport()->IsOpen() == true);
+
+		session.Detach();
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
 	});
 
 	TEST_CASE(L"WorkflowDebugBridge 返回暂停数据")
