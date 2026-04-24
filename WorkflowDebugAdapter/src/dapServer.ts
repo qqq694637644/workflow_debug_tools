@@ -708,6 +708,7 @@ export class WorkflowDebugDapServer {
         name: getFileName(frame.sourcePath)
       },
       line: frame.line,
+      column: frame.column + 1,
       presentationHint: 'normal'
     };
   }
