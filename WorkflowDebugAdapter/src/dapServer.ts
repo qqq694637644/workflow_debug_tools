@@ -195,11 +195,8 @@ export class WorkflowDebugDapServer {
         case 'initialize':
           this.sendResponse(message, this.createInitializeResponse());
           return;
-        case 'launch':
-          await this.handleAttachRequest(message, 'launch');
-          return;
         case 'attach':
-          await this.handleAttachRequest(message, 'attach');
+          await this.handleAttachRequest(message);
           return;
         case 'configurationDone':
           this.sendResponse(message, {});
@@ -255,7 +252,7 @@ export class WorkflowDebugDapServer {
     }
   }
 
-  private async handleAttachRequest(message: DapRequestMessage, mode: 'attach' | 'launch' = 'attach'): Promise<void> {
+  private async handleAttachRequest(message: DapRequestMessage): Promise<void> {
     const args = this.parseAttachArguments(message.arguments);
     if (this.attached) {
       throw new Error('当前只允许一个 Workflow 调试会话。');
@@ -273,8 +270,8 @@ export class WorkflowDebugDapServer {
       host: args.host ?? '127.0.0.1',
       port: args.port
     };
-    this.log(`开始 ${mode}，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
-    traceDebugMessage('dapServer', `开始 ${mode}，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
+    this.log(`开始 attach，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
+    traceDebugMessage('dapServer', `开始 attach，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
     this.transport = new BridgeTransport<ProtocolEnvelope>({
       name: 'workflow-debug-dap',
       mode: 'server',
@@ -288,35 +285,19 @@ export class WorkflowDebugDapServer {
     this.log(`调试适配器已监听 ${endpoint.host}:${endpoint.port}。`);
     traceDebugMessage('dapServer', `调试适配器已监听 ${endpoint.host}:${endpoint.port}。`);
     this.sendOutput(`Workflow 调试桥接已监听 ${endpoint.host}:${endpoint.port}。`, 'console');
-
-    try {
-      this.log('等待 WorkflowDebugHost 完成握手。');
-      traceDebugMessage('dapServer', '等待 WorkflowDebugHost 完成握手。');
-      const timeoutMs = args.connectTimeoutMs;
-      if (typeof timeoutMs === 'number' && timeoutMs > 0) {
-        this.log(`等待 WorkflowDebugHost 完成握手（超时 ${timeoutMs} 毫秒）。`);
-      }
-      else {
-        this.log('等待 WorkflowDebugHost 完成握手（无限等待）。');
-      }
-
-      await waitForOptionalTimeout(
-        this.readyDeferred.promise,
-        timeoutMs,
-        '等待 WorkflowDebugHost 连接超时。'
-      );
-    }
-    catch (error) {
-      this.log(`${mode} 超时或失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-      await this.shutdown(`${mode} timeout`);
-      throw error;
-    }
-
-    this.log(`${mode} 完成，双方握手成功。`);
-    traceDebugMessage('dapServer', `${mode} 完成，双方握手成功。`);
-    this.sendEvent('initialized', {});
     this.sendResponse(message, {});
     this.flushBufferedOutputs();
+
+    this.log('等待 WorkflowDebugHost 完成握手。');
+    traceDebugMessage('dapServer', '等待 WorkflowDebugHost 完成握手。');
+    const timeoutMs = args.connectTimeoutMs;
+    if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+      this.log(`等待 WorkflowDebugHost 完成握手（超时 ${timeoutMs} 毫秒）。`);
+      void this.monitorReadyTimeout(this.readyDeferred.promise, timeoutMs);
+    }
+    else {
+      this.log('等待 WorkflowDebugHost 完成握手（无限等待）。');
+    }
   }
 
   private async handleSetBreakpointsRequest(message: DapRequestMessage): Promise<void> {
@@ -443,9 +424,13 @@ export class WorkflowDebugDapServer {
     this.log('收到 disconnect。');
     this.gracefulClose = true;
     this.terminated = true;
-    await this.requestHostDisconnect('disconnect', false);
+    const restart = this.parseBooleanArgument(message.arguments, 'restart', false);
+    await this.requestHostDisconnect(restart ? 'restart' : 'disconnect', restart);
     this.sendResponse(message, {});
-    this.sendEvent('terminated', {});
+    this.sendEvent('terminated', {
+      restart
+    });
+    this.cancelReadyWait();
     void this.disposeTransport();
   }
 
@@ -455,7 +440,10 @@ export class WorkflowDebugDapServer {
     this.terminated = true;
     await this.requestHostDisconnect('restart', true);
     this.sendResponse(message, {});
-    this.sendEvent('terminated', {});
+    this.sendEvent('terminated', {
+      restart: true
+    });
+    this.cancelReadyWait();
     void this.disposeTransport();
   }
 
@@ -530,6 +518,10 @@ export class WorkflowDebugDapServer {
         if (message.replyTo === this.initializeRequestSeq && this.readyDeferred) {
           this.readyDeferred.resolve();
           this.readyDeferred = null;
+          this.log('attach 完成，双方握手成功。');
+          traceDebugMessage('dapServer', 'attach 完成，双方握手成功。');
+          this.sendEvent('initialized', {});
+          this.flushBufferedOutputs();
         }
         this.log(`收到宿主 ready：accepted=${readyMessage.body.accepted}。`);
         return;
@@ -600,8 +592,11 @@ export class WorkflowDebugDapServer {
         this.log(`收到宿主断开事件：reason=${disconnectBody.body.reason} restart=${disconnectBody.body.restart}。`);
         if (!this.gracefulClose && !this.terminated) {
           this.terminated = true;
-          this.sendEvent('terminated', {});
+          this.sendEvent('terminated', {
+            restart: disconnectBody.body.restart
+          });
         }
+        this.cancelReadyWait();
         return;
       }
     }
@@ -853,6 +848,15 @@ export class WorkflowDebugDapServer {
     };
   }
 
+  private parseBooleanArgument(args: unknown, name: string, defaultValue: boolean): boolean {
+    if (typeof args !== 'object' || args === null) {
+      return defaultValue;
+    }
+
+    const record = args as Record<string, unknown>;
+    return normalizeBoolean(record[name], name, defaultValue);
+  }
+
   private parseSetBreakpointsArguments(args: unknown): WorkflowSetBreakpointsArguments {
     if (typeof args !== 'object' || args === null) {
       throw new Error('setBreakpoints 请求必须携带参数。');
@@ -1032,10 +1036,32 @@ export class WorkflowDebugDapServer {
 
     this.terminated = true;
     this.log(`开始关闭调试会话：${reason}。`);
+    this.cancelReadyWait();
     if (shouldFailPendingRequestsOnShutdown(reason)) {
       this.failPendingRequests(new Error('调试会话已关闭。'));
     }
     await this.disposeTransport();
+  }
+
+  private cancelReadyWait(): void {
+    if (this.readyDeferred) {
+      this.readyDeferred.reject(new Error('调试会话已关闭。'));
+      this.readyDeferred = null;
+    }
+  }
+
+  private async monitorReadyTimeout(readyPromise: Promise<void>, timeoutMs: number): Promise<void> {
+    try {
+      await waitForOptionalTimeout(readyPromise, timeoutMs, '等待 WorkflowDebugHost 连接超时。');
+    }
+    catch (error) {
+      if (this.gracefulClose || this.terminated) {
+        return;
+      }
+
+      this.log(`attach 超时或失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      await this.shutdown('attach timeout');
+    }
   }
 
   private async disposeTransport(): Promise<void> {

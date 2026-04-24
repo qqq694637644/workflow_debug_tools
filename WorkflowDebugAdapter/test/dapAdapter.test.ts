@@ -535,7 +535,7 @@ async function startFakeHost(port: number): Promise<{
   };
 }
 
-async function verifyWorkflowDebugAdapterPluginFlow(requestCommand: 'attach' | 'launch'): Promise<void> {
+async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
   const port = await reservePort();
   const scriptPath = fileURLToPath(new URL('../src/dapMain.js', import.meta.url));
   const client = new DapClient(scriptPath);
@@ -552,7 +552,7 @@ async function verifyWorkflowDebugAdapterPluginFlow(requestCommand: 'attach' | '
     const outputBeforeStart = receivedMessages.find((message) => message.type === 'event' && message.event === 'output');
     assert.equal(outputBeforeStart, undefined);
 
-    const startRequest = client.request(requestCommand, {
+    const attachRequest = client.request('attach', {
       host: '127.0.0.1',
       port,
       workspaceRoot: 'C:/workspace/Workflow-master',
@@ -568,10 +568,15 @@ async function verifyWorkflowDebugAdapterPluginFlow(requestCommand: 'attach' | '
 
     await client.waitForEvent('output', (event) => typeof (event.body as { readonly output?: string } | undefined)?.output === 'string' && (event.body as { readonly output: string }).output.includes('已监听'));
 
+    const attachResponseBeforeHost = await Promise.race([
+      attachRequest,
+      delay(250).then(() => null)
+    ]);
+    assert.ok(attachResponseBeforeHost, 'attach 请求不应等待宿主连接完成才返回。');
+    assert.equal((attachResponseBeforeHost as DapResponseMessage).success, true);
+
     const host = await startFakeHost(port);
     try {
-      const startResponse = await startRequest;
-      assert.equal(startResponse.success, true);
       await client.waitForEvent('initialized');
 
       const setBreakpointsResponse = await client.request('setBreakpoints', {
@@ -669,7 +674,8 @@ async function verifyWorkflowDebugAdapterPluginFlow(requestCommand: 'attach' | '
 
       const restartResponse = await client.request('restart');
       assert.equal(restartResponse.success, true);
-      await client.waitForEvent('terminated');
+      const terminatedEvent = await client.waitForEvent('terminated');
+      assert.equal((terminatedEvent.body as { readonly restart?: boolean } | undefined)?.restart, true);
       assert.deepEqual(host.disconnectRequests, [
         {
           reason: 'restart',
@@ -688,9 +694,8 @@ async function verifyWorkflowDebugAdapterPluginFlow(requestCommand: 'attach' | '
 }
 
 async function main(): Promise<void> {
-  await verifyWorkflowDebugAdapterPluginFlow('attach');
-  await verifyWorkflowDebugAdapterPluginFlow('launch');
-  console.log('WorkflowDebugAdapter VSCode 插件附加与启动检查通过。');
+  await verifyWorkflowDebugAdapterPluginFlow();
+  console.log('WorkflowDebugAdapter VSCode 插件附加与单步检查通过。');
 }
 
 try {
