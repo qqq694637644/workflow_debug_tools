@@ -11,6 +11,7 @@
 - 需要改地址时，可以用 `--workflow-debug-host=...`
 - 需要改端口时，可以用 `--workflow-debug-port=...`
 - 需要区分多个会话时，可以用 `--workflow-debug-session=...`
+- 如果要模拟 LuaPanda 的“接入后立刻断下”，在 VSCode 的 `workflow` 配置里把 `stopOnEntry` 保持为 `true`
 
 这套启动参数只影响调试模式，不影响普通脚本运行。
 

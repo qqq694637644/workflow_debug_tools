@@ -21,6 +21,7 @@ function verifyLogFormat(): void {
 
   assert.equal(shouldSuppressAdapterError(new Error('connection closed'), true), true);
   assert.equal(shouldSuppressAdapterError(new Error('write EPIPE'), true), true);
+  assert.equal(shouldSuppressAdapterError(new Error('调试会话已关闭。'), true), true);
   assert.equal(shouldSuppressAdapterError(new Error('connection closed'), false), false);
   assert.equal(shouldSuppressAdapterError(new Error('boom'), true), false);
 }

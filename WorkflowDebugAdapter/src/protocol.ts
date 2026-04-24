@@ -88,6 +88,7 @@ export interface HelloBody {
 export interface InitializeBody {
   readonly workspaceRoot: string;
   readonly pathMapping: ReadonlyArray<PathMappingRule>;
+  readonly stopOnEntry?: boolean;
   readonly supports: CapabilitySet;
 }
 

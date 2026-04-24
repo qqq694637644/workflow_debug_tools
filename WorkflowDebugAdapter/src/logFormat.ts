@@ -18,7 +18,8 @@ export function formatDebugMessage(message: unknown): string {
 const expectedAdapterClosePatterns = [
   'connection closed',
   'write EPIPE',
-  'read error'
+  'read error',
+  '调试会话已关闭。'
 ];
 
 // 调试会话正常结束时，VSCode 和 Node 可能会把 socket 关闭翻译成错误回调。

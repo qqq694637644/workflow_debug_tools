@@ -69,6 +69,7 @@ export interface WorkflowAttachArguments {
   readonly workspaceRoot: string;
   readonly pathMapping?: ReadonlyArray<PathMappingRule>;
   readonly connectTimeoutMs?: number;
+  readonly stopOnEntry?: boolean;
 }
 
 export interface WorkflowInitializeArguments {

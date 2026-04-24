@@ -48,6 +48,12 @@ export async function activate(context: { subscriptions: Array<{ dispose(): void
         writeLog('已为 workflow 调试会话默认设置 connectTimeoutMs=0，表示无限等待宿主连接。');
       }
 
+      // LuaPanda 的 attach 默认会在第一条可执行语句处暂停，这里保持相同的体验。
+      if (typeof config.stopOnEntry !== 'boolean') {
+        config.stopOnEntry = true;
+        writeLog('已为 workflow 调试会话默认设置 stopOnEntry=true。');
+      }
+
       // 这里不再让 VSCode 拉起外部调试适配器进程，而是像 LuaPanda 一样直接连到内嵌 debugServer。
       config.debugServer = address.port;
       writeLog(`已为 workflow 调试会话绑定内嵌调试服务器端口：${address.port}。`);

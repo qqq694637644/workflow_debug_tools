@@ -9,6 +9,7 @@
       "port": 4711,
       "workspaceRoot": "${workspaceFolder}",
       "connectTimeoutMs": 0,
+      "stopOnEntry": true,
       "pathMapping": []
     },
     {
@@ -19,6 +20,7 @@
       "port": 4711,
       "workspaceRoot": "${workspaceFolder}\\Test\\UnitTest\\mytest",
       "connectTimeoutMs": 0,
+      "stopOnEntry": true,
       "pathMapping": []
     }
   ]

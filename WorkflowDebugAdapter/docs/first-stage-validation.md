@@ -16,7 +16,8 @@
    - “输出”面板通道名是 `Workflow 调试器`
    - “调试控制台”里的日志来自 DAP `output` 事件
 7. `connectTimeoutMs` 默认是 `0`，表示等待宿主连接时不超时；如果你想限制等待时间，可以在 `launch.json` 里显式改成一个正整数毫秒值。
-8. 如果要调试 `D:\repos\Workflow-master\Test\UnitTest\mytest`，可以直接使用 `Workflow mytest`，它会把 `workspaceRoot` 指向 `Test\\UnitTest\\mytest`。
+8. `stopOnEntry` 默认是 `true`，表示宿主连接并初始化完成后，会在第一条可执行语句处自动暂停；如果你不想在入口停住，可以在 `launch.json` 里显式改成 `false`。
+9. 如果要调试 `D:\repos\Workflow-master\Test\UnitTest\mytest`，可以直接使用 `Workflow mytest`，它会把 `workspaceRoot` 指向 `Test\\UnitTest\\mytest`。
 
 ## 自动化验证
 

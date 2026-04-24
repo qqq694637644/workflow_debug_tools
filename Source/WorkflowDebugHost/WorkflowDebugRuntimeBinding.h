@@ -43,6 +43,7 @@ namespace vl
 				bool							RequestRun();
 				bool							RequestPause();
 				bool							RequestStop();
+				bool							RequestStopOnEntry();
 				bool							RequestStepOver(bool beforeCodegen = true);
 				bool							RequestStepInto(bool beforeCodegen = true);
 
@@ -77,6 +78,7 @@ namespace vl
 					WorkflowDebugBridge*			bridge
 				);
 				void								Unbind();
+				bool								RequestStopOnEntry();
 				bool								IsBound() const;
 				Ptr<runtime::WfDebugger>			GetDebugger() const;
 				Ptr<RemoteWfDebugger>				GetRemoteDebugger() const;
@@ -85,6 +87,7 @@ namespace vl
 			private:
 				Ptr<runtime::WfDebugger>			debugger;
 				Ptr<RemoteWfDebugger>				remoteDebugger;
+				bool								stopOnEntryPending = false;
 				WorkflowDebugSessionState*			state = nullptr;
 				WorkflowDebugSourceCatalog*			sourceCatalog = nullptr;
 				WorkflowDebugStackInspector*		stackInspector = nullptr;

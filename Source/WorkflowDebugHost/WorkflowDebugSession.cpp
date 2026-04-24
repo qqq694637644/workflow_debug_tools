@@ -118,6 +118,10 @@ namespace vl
 
 			void WorkflowDebugSession::Detach()
 			{
+				if (bridge && transport && transport->IsOpen())
+				{
+					bridge->NotifyDisconnect(L"会话关闭");
+				}
 				dispatchLoopRunning = false;
 				runtimeBinding->Unbind();
 				runtimeBinding->AttachDebugData(nullptr, nullptr, nullptr, nullptr, nullptr);

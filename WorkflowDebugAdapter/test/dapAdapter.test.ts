@@ -418,6 +418,7 @@ async function startFakeHost(port: number): Promise<{
     void (async () => {
       if (message.type === 'request' && message.cmd === 'initialize') {
         const initializeRequest = message as RequestEnvelope<'initialize'>;
+        assert.equal(initializeRequest.body.stopOnEntry, true);
         const ready = target.receiveInitialize(initializeRequest);
         await transport.send(ready);
         return;
@@ -532,6 +533,7 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       adapterID: 'workflow'
     });
     assert.equal(initializeResponse.success, true);
+    assert.equal((initializeResponse.body as { readonly supportsRestartRequest?: boolean } | undefined)?.supportsRestartRequest, false);
     const receivedMessages = client.getReceivedMessages();
     const initializeResponseIndex = receivedMessages.findIndex((message) => message.type === 'response' && message.request_seq === 1 && message.command === 'initialize');
     assert.ok(initializeResponseIndex >= 0);
@@ -548,7 +550,8 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
           remotePath
         }
       ],
-      connectTimeoutMs: 10000
+      connectTimeoutMs: 10000,
+      stopOnEntry: true
     });
 
     await client.waitForEvent('output', (event) => typeof (event.body as { readonly output?: string } | undefined)?.output === 'string' && (event.body as { readonly output: string }).output.includes('已监听'));

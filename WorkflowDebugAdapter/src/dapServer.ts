@@ -79,6 +79,18 @@ function normalizePathMappings(rawMappings: ReadonlyArray<{ readonly localPath: 
   return rawMappings ?? [];
 }
 
+function normalizeBoolean(value: unknown, name: string, defaultValue: boolean): boolean {
+  if (value === undefined || value === null) {
+    return defaultValue;
+  }
+
+  if (typeof value !== 'boolean') {
+    throw new Error(`${name} 必须是布尔值。`);
+  }
+
+  return value;
+}
+
 function toSourceBreakpoints(breakpoints: ReadonlyArray<DapBreakpoint>): ReadonlyArray<SourceBreakpointInput> {
   return breakpoints.map((breakpoint) => ({
     line: breakpoint.line,
@@ -130,6 +142,7 @@ export class WorkflowDebugDapServer {
   private activeThreadId: number | null = null;
   private attached = false;
   private terminated = false;
+  private gracefulClose = false;
   private readonly bufferedOutputs: Array<BufferedOutput> = [];
 
   constructor(options: WorkflowDebugDapServerOptions = {}) {
@@ -245,6 +258,7 @@ export class WorkflowDebugDapServer {
     this.activeThreadId = null;
     this.attached = true;
     this.terminated = false;
+    this.gracefulClose = false;
 
     const endpoint: BridgeTransportEndpoint = {
       host: args.host ?? '127.0.0.1',
@@ -418,6 +432,7 @@ export class WorkflowDebugDapServer {
 
   private async handleDisconnectRequest(message: DapRequestMessage): Promise<void> {
     this.log('收到 disconnect。');
+    this.gracefulClose = true;
     this.sendResponse(message, {});
     this.terminated = true;
     this.failPendingRequests(new Error('调试会话已关闭。'));
@@ -427,6 +442,7 @@ export class WorkflowDebugDapServer {
 
   private async handleRestartRequest(message: DapRequestMessage): Promise<void> {
     this.log('收到 restart。');
+    this.gracefulClose = true;
     this.sendResponse(message, {});
     this.terminated = true;
     this.failPendingRequests(new Error('调试会话已关闭。'));
@@ -441,7 +457,7 @@ export class WorkflowDebugDapServer {
     });
 
     transport.onClose(() => {
-      if (this.terminated) {
+      if (this.terminated || this.gracefulClose) {
         return;
       }
 
@@ -490,6 +506,7 @@ export class WorkflowDebugDapServer {
         const initializeRequest = this.adapter.createInitialize({
           workspaceRoot: this.attachArguments.workspaceRoot,
           pathMapping: normalizePathMappings(this.attachArguments.pathMapping),
+          stopOnEntry: this.attachArguments.stopOnEntry ?? true,
           supports: DEFAULT_CAPABILITIES
         });
         this.initializeRequestSeq = initializeRequest.seq;
@@ -576,6 +593,10 @@ export class WorkflowDebugDapServer {
       }
     }
     catch (error) {
+      if (this.gracefulClose && error instanceof Error && error.message === '调试会话已关闭。') {
+        this.log(`忽略正常关闭期间的请求错误：${error.message}。`);
+        return;
+      }
       this.log(`处理被调试端消息失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       this.writeError(`处理被调试端消息失败：${error instanceof Error ? error.message : String(error)}`);
     }
@@ -611,7 +632,8 @@ export class WorkflowDebugDapServer {
       supportsSetVariable: false,
       supportsStepBack: false,
       supportsStepInTargetsRequest: false,
-      supportsRestartRequest: true,
+      // 参考 LuaPanda 的行为，不公开 restart，避免 VSCode 在断开后继续提示重启。
+      supportsRestartRequest: false,
       supportsTerminateRequest: true,
       supportsThreadsRequest: true,
       supportsStackTraceRequest: true,
@@ -793,13 +815,15 @@ export class WorkflowDebugDapServer {
       : [];
 
     const connectTimeoutMs = normalizeConnectTimeoutMs(record.connectTimeoutMs);
+    const stopOnEntry = normalizeBoolean(record.stopOnEntry, 'stopOnEntry', true);
 
     return {
       host,
       port: record.port,
       workspaceRoot,
       pathMapping,
-      connectTimeoutMs
+      connectTimeoutMs,
+      stopOnEntry
     };
   }
 

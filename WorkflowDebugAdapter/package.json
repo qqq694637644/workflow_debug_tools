@@ -54,6 +54,11 @@
                 "default": 0,
                 "description": "等待宿主连接的超时时间，单位毫秒。设置为 0 或留空表示无限等待。"
               },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": true,
+                "description": "宿主连接并初始化后，是否在第一条可执行语句处自动暂停，默认 true。"
+              },
               "pathMapping": {
                 "type": "array",
                 "description": "本地路径与远端路径的映射规则。"
@@ -70,6 +75,7 @@
             "port": 4711,
             "workspaceRoot": "${workspaceFolder}",
             "connectTimeoutMs": 0,
+            "stopOnEntry": true,
             "pathMapping": [],
             "internalConsoleOptions": "openOnSessionStart"
           }

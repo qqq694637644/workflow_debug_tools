@@ -169,6 +169,45 @@ namespace vl
 					return true;
 				}
 
+				static bool TryReadOptionalBooleanField(JsonObject* object, const WString& name, bool& value)
+				{
+					Ptr<JsonNode> node;
+					if (!TryGetField(object, name, node))
+					{
+						return true;
+					}
+
+					if (auto literalNode = dynamic_cast<JsonLiteral*>(node.Obj()))
+					{
+						if (literalNode->value == JsonLiteralValue::True)
+						{
+							value = true;
+							return true;
+						}
+						if (literalNode->value == JsonLiteralValue::False)
+						{
+							value = false;
+							return true;
+						}
+					}
+					else if (auto stringNode = dynamic_cast<JsonString*>(node.Obj()))
+					{
+						auto text = stringNode->content.value;
+						if (text == L"true" || text == L"True" || text == L"TRUE")
+						{
+							value = true;
+							return true;
+						}
+						if (text == L"false" || text == L"False" || text == L"FALSE")
+						{
+							value = false;
+							return true;
+						}
+					}
+
+					return false;
+				}
+
 				static bool TryReadScopeKindField(JsonObject* object, const WString& name, WorkflowDebugScopeKind& kind)
 				{
 					WString text;
@@ -556,6 +595,14 @@ namespace vl
 					return body;
 				}
 
+				static Ptr<JsonNode> BuildDisconnectBody(const WString& reason, bool restart)
+				{
+					auto body = CreateObject();
+					AddField(body.Obj(), L"reason", CreateString(reason.Length() > 0 ? reason : L"会话关闭"));
+					AddField(body.Obj(), L"restart", CreateLiteral(restart));
+					return body;
+				}
+
 				static Ptr<JsonNode> BuildExceptionBody(
 					const WString& message,
 					bool fatal,
@@ -742,12 +789,31 @@ namespace vl
 			bool WorkflowDebugBridge::HandleInitialize(const WorkflowDebugEnvelope& envelope)
 			{
 				auto body = ParseJsonObject(envelope.body);
-				if (body && state)
+				if (body)
 				{
 					WString workspaceRoot;
 					if (TryReadStringField(body.Obj(), L"workspaceRoot", workspaceRoot))
 					{
-						state->SetWorkspaceRoot(workspaceRoot);
+						if (state)
+						{
+							state->SetWorkspaceRoot(workspaceRoot);
+						}
+					}
+
+					bool stopOnEntry = true;
+					if (!TryReadOptionalBooleanField(body.Obj(), L"stopOnEntry", stopOnEntry))
+					{
+						return false;
+					}
+
+					if (stopOnEntry && runtimeBinding)
+					{
+						// 参考 LuaPanda 的 attach 语义：连接完成后先把运行时置为入口暂停，
+						// 这样脚本第一次进入可执行点时就会自动停住。
+						if (!runtimeBinding->RequestStopOnEntry())
+						{
+							return false;
+						}
 					}
 				}
 
@@ -920,6 +986,16 @@ namespace vl
 			bool WorkflowDebugBridge::NotifyStopped()
 			{
 				return SendEvent(state, transport, L"stopped", BuildStoppedBody(state));
+			}
+
+			bool WorkflowDebugBridge::NotifyDisconnect(const WString& reason)
+			{
+				if (state)
+				{
+					state->SetPhase(WorkflowDebugSessionPhase::Closed);
+				}
+				// 正常结束时先通知适配器，再关闭底层连接，避免 VSCode 把收尾当成异常断开。
+				return SendEvent(state, transport, L"disconnect", BuildDisconnectBody(reason, false));
 			}
 
 			bool WorkflowDebugBridge::NotifyHello(const WString& runtimeVersion, const collections::List<WorkflowDebugSourceRecord>& sourceMap)

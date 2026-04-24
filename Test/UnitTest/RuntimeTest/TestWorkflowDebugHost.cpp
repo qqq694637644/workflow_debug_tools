@@ -271,6 +271,19 @@ TEST_FILE
 		TEST_ASSERT(transport.IsOpen() == false);
 	});
 
+	TEST_CASE(L"WorkflowDebugRuntimeBinding 入口暂停")
+	{
+		Ptr<TestRemoteWfDebugger> debugger = Ptr(new TestRemoteWfDebugger);
+		Ptr<runtime::WfDebugger> debuggerBase = debugger;
+		WorkflowDebugRuntimeBinding binding;
+		binding.Bind(debuggerBase);
+
+		TEST_ASSERT(binding.RequestStopOnEntry() == true);
+		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::RequiredToPause);
+
+		binding.Unbind();
+	});
+
 	TEST_CASE(L"WorkflowDebugTransport TCP 收发")
 	{
 		vint port = 0;
@@ -513,6 +526,21 @@ TEST_FILE
 		session.Detach();
 		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Closed);
 		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+	});
+
+	TEST_CASE(L"WorkflowDebugSession 断开通知")
+	{
+		WorkflowDebugSession session(L"wf-disconnect");
+		session.Attach();
+
+		session.Detach();
+
+		WorkflowDebugEnvelope disconnect;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(disconnect) == true);
+		TEST_ASSERT(disconnect.kind == WorkflowDebugEnvelopeKind::Event);
+		TEST_ASSERT(disconnect.command == L"disconnect");
+		TEST_ASSERT(ContainsSubstring(disconnect.body, L"\"reason\":\"会话关闭\""));
+		TEST_ASSERT(ContainsSubstring(disconnect.body, L"\"restart\":false"));
 	});
 
 	TEST_CASE(L"WorkflowDebugSession 端点连接")

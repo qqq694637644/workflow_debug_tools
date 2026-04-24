@@ -173,6 +173,18 @@ namespace vl
 				return succeeded;
 			}
 
+			bool RemoteWfDebugger::RequestStopOnEntry()
+			{
+				auto succeeded = Pause();
+				if (succeeded)
+				{
+					std::lock_guard<std::mutex> guard(controlMutex);
+					pauseSnapshotCaptured = false;
+					controlCondition.notify_all();
+				}
+				return succeeded;
+			}
+
 			bool RemoteWfDebugger::RequestStepOver(bool beforeCodegen)
 			{
 				auto succeeded = StepOver(beforeCodegen);
@@ -282,11 +294,27 @@ namespace vl
 					debugger = nullptr;
 				}
 				remoteDebugger = nullptr;
+				stopOnEntryPending = false;
 				state = nullptr;
 				sourceCatalog = nullptr;
 				stackInspector = nullptr;
 				valueInspector = nullptr;
 				bridge = nullptr;
+			}
+
+			bool WorkflowDebugRuntimeBinding::RequestStopOnEntry()
+			{
+				if (!remoteDebugger)
+				{
+					return false;
+				}
+
+				auto succeeded = remoteDebugger->RequestStopOnEntry();
+				if (succeeded)
+				{
+					stopOnEntryPending = true;
+				}
+				return succeeded;
 			}
 
 			bool WorkflowDebugRuntimeBinding::IsBound() const
@@ -388,6 +416,11 @@ namespace vl
 					else if (debuggerObject->GetState() == runtime::WfDebugger::PauseByBreakPoint)
 					{
 						reason = L"breakpoint";
+					}
+					else if (stopOnEntryPending)
+					{
+						reason = L"entry";
+						stopOnEntryPending = false;
 					}
 
 					state->SetLastStopped(reason, threadId, stoppedFrameId, stoppedSourceId, stoppedRow);
