@@ -43,6 +43,12 @@ function assertNonNegativeInteger(value: number, name: string): void {
   }
 }
 
+function assertKnownOrUnknownSourceId(value: number, name: string): void {
+  if (!Number.isInteger(value) || value < -1) {
+    throw new StackModelError(`${name} 必须是大于等于 -1 的整数。`);
+  }
+}
+
 function cloneFrame(frame: StackFrameModel): StackFrameModel {
   return {
     ...frame
@@ -70,7 +76,7 @@ function normalizeFrames(
     assertNonNegativeInteger(frame.threadId, 'frame.threadId');
     assertNonNegativeInteger(frame.frameId, 'frame.frameId');
     assertNonNegativeInteger(frame.callStackIndex, 'frame.callStackIndex');
-    assertNonNegativeInteger(frame.sourceId, 'frame.sourceId');
+    assertKnownOrUnknownSourceId(frame.sourceId, 'frame.sourceId');
     if (frame.threadId !== threadId) {
       throw new StackModelError('栈帧线程标识与调用栈线程标识不一致。');
     }

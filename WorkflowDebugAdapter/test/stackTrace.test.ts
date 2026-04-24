@@ -232,9 +232,94 @@ function verifyStackTraceWindowingKeepsFrameIdsStable(): void {
   assert.equal(adapter.getStackModel().getFrame(1, 2), null);
 }
 
+function verifyUnknownSourceFramesDoNotBreakStackTrace(): void {
+  const { adapter, target } = setupSession();
+  const setBreakpoints = adapter.createSetBreakpoints(localPath, [
+    {
+      line: 14
+    }
+  ]);
+
+  const validations = target.receiveSetBreakpoints(setBreakpoints);
+  for (const validation of validations) {
+    adapter.receiveBreakpointValidated(validation);
+  }
+
+  const continueRequest = adapter.createContinue(1);
+  target.onContinue(continueRequest);
+  const stopped = target.handleExecutionPoint({
+    threadId: 1,
+    frameId: 2,
+    sourceId: 7,
+    row: 13,
+    functionName: 'leaf',
+    sourcePath: remotePath,
+    stackFrames: [
+      {
+        callStackIndex: 0,
+        functionName: 'main',
+        sourceId: 7,
+        sourcePath: remotePath,
+        row: 3
+      },
+      {
+        callStackIndex: 1,
+        functionName: 'helper',
+        sourceId: 7,
+        sourcePath: remotePath,
+        row: 8
+      },
+      {
+        callStackIndex: 2,
+        functionName: 'leaf',
+        sourceId: 7,
+        sourcePath: remotePath,
+        row: 13
+      }
+    ]
+  });
+
+  assert.ok(stopped);
+  adapter.receiveStopped(stopped!);
+
+  const stepInRequest = adapter.createStepIn(1);
+  target.onStep(stepInRequest);
+  const unknownStopped = target.handleExecutionPoint({
+    threadId: 1,
+    frameId: 3,
+    sourceId: -1,
+    row: 0,
+    functionName: 'builtin',
+    sourcePath: 'unknown://source/frame/3',
+    stackFrames: [
+      {
+        callStackIndex: 0,
+        functionName: 'builtin',
+        sourceId: -1,
+        sourcePath: 'unknown://source/frame/3',
+        row: 0
+      }
+    ]
+  });
+
+  assert.ok(unknownStopped);
+  adapter.receiveStopped(unknownStopped!);
+
+  const request = adapter.createStackTrace(1, 0, 20);
+  const response = target.receiveStackTrace(request);
+  const stackState = adapter.receiveStackTrace(response);
+
+  assert.equal(response.body.totalFrames, 1);
+  assert.equal(stackState.frames.length, 1);
+  assert.equal(stackState.frames[0].sourceId, -1);
+  assert.equal(stackState.frames[0].sourcePath, 'unknown://source/frame/3');
+  assert.equal(adapter.getStackModel().getFrame(0, 1)?.sourceId, -1);
+}
+
 function main(): void {
   verifyStackTraceRequestAndModel();
   verifyStackTraceWindowingKeepsFrameIdsStable();
+  verifyUnknownSourceFramesDoNotBreakStackTrace();
   console.log('WorkflowDebugAdapter 调用栈检查通过。');
 }
 

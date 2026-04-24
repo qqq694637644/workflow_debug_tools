@@ -111,6 +111,11 @@ namespace vl
 					}
 				}
 
+				static WString BuildUnknownSourcePath(vint frameId)
+				{
+					return L"unknown://source/frame/" + itow(frameId >= 0 ? frameId : 0);
+				}
+
 				static vint FindThreadId(runtime::WfDebugger* debugger, runtime::WfRuntimeThreadContext* context)
 				{
 					if (!debugger || !context)
@@ -424,12 +429,25 @@ namespace vl
 					auto range = debuggerObject->GetCurrentPosition(true, context, frameId);
 					frame.sourceId = range.codeIndex;
 					frame.row = range.start.row;
+					if (frame.row < 0)
+					{
+						// 某些运行时内部位置没有可回放的源码行号时，统一收敛到第 0 行，
+						// 这样后续序列化出来的 line / row 关系仍然保持一致。
+						frame.row = 0;
+					}
 					frame.column = range.start.column;
 
 					if (sourceCatalog && frame.sourceId >= 0)
 					{
 						vint resolvedRow = 0;
-						sourceCatalog->ResolveByCodeIndex(frame.sourceId, frame.sourcePath, resolvedRow);
+						if (!sourceCatalog->ResolveByCodeIndex(frame.sourceId, frame.sourcePath, resolvedRow))
+						{
+							frame.sourcePath = BuildUnknownSourcePath(frame.frameId);
+						}
+					}
+					else if (frame.sourcePath.Length() == 0)
+					{
+						frame.sourcePath = BuildUnknownSourcePath(frame.frameId);
 					}
 
 					frames.Add(frame);

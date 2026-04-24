@@ -30,6 +30,8 @@ export async function activate(context: { subscriptions: Array<{ dispose(): void
   const address = await debugServerHost.start();
   writeLog(`已启动内嵌调试服务器：127.0.0.1:${address.port}。`);
 
+  context.subscriptions.push(vscode.commands.registerCommand('workflow.consumeF9', () => undefined));
+
   const configurationProvider = {
     resolveDebugConfiguration(_folder: unknown, config: any): any {
       if (!config || config.type !== 'workflow') {

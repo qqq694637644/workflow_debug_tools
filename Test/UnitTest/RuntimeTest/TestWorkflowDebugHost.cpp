@@ -450,6 +450,20 @@ TEST_FILE
 		TEST_ASSERT(stackInspector.TryGetFrame(1, 1, loadedFrame) == true);
 		TEST_ASSERT(loadedFrame.functionName == L"Helper");
 
+		WorkflowDebugStackFrame unknownFrame = frame0;
+		unknownFrame.frameId = 2;
+		unknownFrame.sourceId = -1;
+		unknownFrame.sourcePath = L"unknown://source/frame/2";
+		unknownFrame.functionName = L"Unknown";
+		unknownFrame.row = 0;
+		unknownFrame.column = 0;
+		frames.Add(unknownFrame);
+		stackInspector.CaptureStack(1, frames);
+
+		TEST_ASSERT(stackInspector.TryGetFrame(1, 2, loadedFrame) == true);
+		TEST_ASSERT(loadedFrame.sourceId == -1);
+		TEST_ASSERT(loadedFrame.sourcePath == L"unknown://source/frame/2");
+
 		WorkflowDebugFrameValues values;
 		WorkflowDebugVariable local;
 		local.name = L"localValue";
@@ -776,6 +790,45 @@ TEST_FILE
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"localValue\""));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"42\""));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"canExpand\":false"));
+
+		session.Detach();
+	});
+
+	TEST_CASE(L"WorkflowDebugBridge 负行号栈帧归一化")
+	{
+		WorkflowDebugSession session(L"wf-negative-row");
+		session.Attach();
+
+		collections::List<WorkflowDebugStackFrame> frames;
+		WorkflowDebugStackFrame frame;
+		frame.threadId = 0;
+		frame.frameId = 0;
+		frame.sourceId = -1;
+		frame.functionName = L"Hidden";
+		frame.sourcePath = L"unknown://source/frame/0";
+		frame.row = -1;
+		frame.column = -1;
+		frames.Add(frame);
+		session.GetStackInspector()->CaptureStack(0, frames);
+		session.GetState()->SetPhase(WorkflowDebugSessionPhase::Paused);
+		session.GetState()->SetLastStopped(L"pause", 0, 0, -1, -1);
+
+		WorkflowDebugEnvelope stackTrace;
+		stackTrace.kind = WorkflowDebugEnvelopeKind::Request;
+		stackTrace.command = L"stackTrace";
+		stackTrace.sessionId = L"wf-negative-row";
+		stackTrace.seq = 13;
+		stackTrace.body = L"{\"threadId\":0,\"startFrame\":0,\"levels\":20}";
+		TEST_ASSERT(session.Dispatch(stackTrace) == true);
+
+		WorkflowDebugEnvelope stackTraceResponse;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(stackTraceResponse) == true);
+		TEST_ASSERT(stackTraceResponse.kind == WorkflowDebugEnvelopeKind::Response);
+		TEST_ASSERT(stackTraceResponse.replyTo == 13);
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"sourceId\":-1"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"row\":0"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"line\":1"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"functionName\":\"Hidden\""));
 
 		session.Detach();
 	});

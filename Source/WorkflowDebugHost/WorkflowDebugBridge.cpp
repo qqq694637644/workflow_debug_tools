@@ -267,6 +267,7 @@ namespace vl
 				static Ptr<JsonObject> BuildStackFrame(const WorkflowDebugStackFrame& frame)
 				{
 					auto object = CreateObject();
+					auto row = frame.row >= 0 ? frame.row : 0;
 					AddField(object.Obj(), L"frameId", CreateNumber(frame.frameId));
 					AddField(object.Obj(), L"callStackIndex", CreateNumber(frame.frameId));
 					AddField(object.Obj(), L"threadId", CreateNumber(frame.threadId));
@@ -279,8 +280,9 @@ namespace vl
 						: L"frame-" + itow(frame.frameId);
 					AddField(object.Obj(), L"sourcePath", CreateString(sourcePath));
 					AddField(object.Obj(), L"functionName", CreateString(functionName));
-					AddField(object.Obj(), L"line", CreateNumber(frame.row >= 0 ? frame.row + 1 : 1));
-					AddField(object.Obj(), L"row", CreateNumber(frame.row));
+					// 调试协议里 row 以 0 基保存，line 以 1 基显示；未知帧统一归一到第 0 行，避免两者脱节。
+					AddField(object.Obj(), L"line", CreateNumber(row + 1));
+					AddField(object.Obj(), L"row", CreateNumber(row));
 					AddField(object.Obj(), L"column", CreateNumber(frame.column >= 0 ? frame.column + 1 : 1));
 					AddField(object.Obj(), L"canRequestVariables", CreateLiteral(true));
 					return object;

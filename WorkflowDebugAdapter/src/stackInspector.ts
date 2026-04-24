@@ -35,6 +35,12 @@ function assertNonNegativeInteger(value: number, name: string): void {
   }
 }
 
+function assertKnownOrUnknownSourceId(value: number, name: string): void {
+  if (!Number.isInteger(value) || value < -1) {
+    throw new StackInspectorError(`${name} 必须是大于等于 -1 的整数。`);
+  }
+}
+
 function assertPositiveText(value: string, name: string): string {
   const text = value.trim();
   if (!text) {
@@ -74,7 +80,7 @@ export class StackInspector {
     const normalizedFrames: Array<StackFrameBody> = [...frames]
       .map((frame) => {
         assertNonNegativeInteger(frame.callStackIndex, 'callStackIndex');
-        assertNonNegativeInteger(frame.sourceId, 'sourceId');
+        assertKnownOrUnknownSourceId(frame.sourceId, 'sourceId');
         const functionName = assertPositiveText(frame.functionName, 'functionName');
         const sourcePath = assertPositiveText(frame.sourcePath, 'sourcePath');
         const row = frame.row;

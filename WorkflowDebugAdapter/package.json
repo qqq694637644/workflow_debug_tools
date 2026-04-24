@@ -28,6 +28,32 @@
         "language": "plaintext"
       }
     ],
+    "commands": [
+      {
+        "command": "workflow.consumeF9",
+        "title": "Workflow: Consume F9"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "workflow.consumeF9",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "editor.debug.action.toggleBreakpoint",
+        "key": "f2",
+        "when": "editorTextFocus && editorLangId == plaintext"
+      },
+      {
+        "command": "workflow.consumeF9",
+        "key": "f9",
+        "when": "editorTextFocus && editorLangId == plaintext"
+      }
+    ],
     "debuggers": [
       {
         "type": "workflow",

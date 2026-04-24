@@ -812,8 +812,14 @@ export class TargetSessionMachine extends BaseSessionMachine {
 
   private captureStackSnapshot(point: ExecutionPoint): void {
     if (point.stackFrames && point.stackFrames.length > 0) {
-      this.stackInspector.captureStack(point.threadId, point.stackFrames);
-      for (const frame of point.stackFrames) {
+      const stackFrames = point.stackFrames.map((frame) => ({
+        ...frame,
+        sourcePath: frame.sourcePath && frame.sourcePath.trim().length > 0
+          ? frame.sourcePath
+          : this.sourceCatalog.resolveSourcePath(frame.sourceId) ?? `unknown://source/frame/${frame.callStackIndex}`
+      }));
+      this.stackInspector.captureStack(point.threadId, stackFrames);
+      for (const frame of stackFrames) {
         this.valueInspector.captureFrameVariables(point.threadId, frame.callStackIndex, frame.variables);
       }
       return;
@@ -823,7 +829,7 @@ export class TargetSessionMachine extends BaseSessionMachine {
       callStackIndex: point.frameId,
       functionName: point.functionName ?? `frame-${point.frameId}`,
       sourceId: point.sourceId,
-      sourcePath: point.sourcePath ?? this.sourceCatalog.resolveSourcePath(point.sourceId) ?? `unknown://source/${point.sourceId}`,
+      sourcePath: point.sourcePath ?? this.sourceCatalog.resolveSourcePath(point.sourceId) ?? `unknown://source/frame/${point.frameId}`,
       row: point.row,
       column: point.column
     });
@@ -857,7 +863,9 @@ export class TargetSessionMachine extends BaseSessionMachine {
         callStackIndex: frame.callStackIndex,
         functionName: frame.functionName,
         sourceId: frame.sourceId,
-        sourcePath: frame.sourcePath,
+        sourcePath: frame.sourcePath && frame.sourcePath.trim().length > 0
+          ? frame.sourcePath
+          : `unknown://source/frame/${frame.callStackIndex}`,
         row: frame.row,
         column: frame.column - 1
       });
