@@ -707,16 +707,17 @@ export class WorkflowDebugDapServer {
     readonly canRequestVariables: boolean;
   }): DapStackFrame {
     const id = this.getStackFrameId(frame.threadId, frame.frameId);
-    const displayPath = this.adapter.getSourceCatalog().resolveDisplayPath(frame.sourcePath);
+    const sourceCatalog = this.adapter.getSourceCatalog();
+    const displayPath = sourceCatalog.resolveDisplayPath(frame.sourcePath);
+    const sourcePath = sourceCatalog.hasMappedDisplayPath(frame.sourcePath) ? displayPath : frame.sourcePath;
     return {
       id,
       name: frame.name,
       source: {
-        path: displayPath,
+        path: sourcePath,
         name: getFileName(frame.sourcePath)
       },
       line: frame.line,
-      column: frame.column + 1,
       presentationHint: 'normal'
     };
   }
