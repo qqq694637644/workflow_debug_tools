@@ -117,6 +117,15 @@ static SOCKET CreateLoopbackListener(vint& port)
 	return listenSocket;
 }
 
+class TestRemoteWfDebugger : public RemoteWfDebugger
+{
+public:
+	bool WaitForContinueOnce()
+	{
+		return WaitForContinue();
+	}
+};
+
 TEST_FILE
 {
 	TEST_CASE(L"WorkflowDebugHost 会话管理")
@@ -455,6 +464,7 @@ TEST_FILE
 		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Connected);
 		TEST_ASSERT(session.GetTransport()->IsOpen() == true);
 		TEST_ASSERT(session.GetRuntimeBinding()->IsBound() == true);
+		TEST_ASSERT(session.GetRuntimeBinding()->GetRemoteDebugger() != nullptr);
 
 		WorkflowDebugEnvelope hello;
 		hello.kind = WorkflowDebugEnvelopeKind::Request;
@@ -482,5 +492,139 @@ TEST_FILE
 		session.Detach();
 		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Closed);
 		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+	});
+
+	TEST_CASE(L"WorkflowDebugBridge 返回暂停数据")
+	{
+		WorkflowDebugSession session(L"wf-stack");
+		session.Attach();
+
+		collections::List<WorkflowDebugStackFrame> frames;
+		WorkflowDebugStackFrame frame0;
+		frame0.threadId = 0;
+		frame0.frameId = 0;
+		frame0.sourceId = 7;
+		frame0.functionName = L"Main";
+		frame0.sourcePath = L"D:/src/main.wf";
+		frame0.row = 12;
+		frame0.column = 3;
+
+		WorkflowDebugStackFrame frame1 = frame0;
+		frame1.frameId = 1;
+		frame1.functionName = L"Helper";
+		frame1.row = 20;
+
+		frames.Add(frame0);
+		frames.Add(frame1);
+		session.GetStackInspector()->CaptureStack(0, frames);
+
+		WorkflowDebugFrameValues values;
+		WorkflowDebugVariable local;
+		local.name = L"localValue";
+		local.type = L"vint";
+		local.value = L"42";
+		values.local.Add(local);
+
+		WorkflowDebugVariable argument = local;
+		argument.name = L"argumentValue";
+		values.argument.Add(argument);
+
+		WorkflowDebugVariable captured = local;
+		captured.name = L"capturedValue";
+		values.captured.Add(captured);
+
+		WorkflowDebugVariable global = local;
+		global.name = L"globalValue";
+		values.global.Add(global);
+
+		session.GetValueInspector()->CaptureFrame(0, 1, values);
+		session.GetState()->SetPhase(WorkflowDebugSessionPhase::Paused);
+		session.GetState()->SetLastStopped(L"breakpoint", 0, 1, 7, 20);
+
+		WorkflowDebugEnvelope stackTrace;
+		stackTrace.kind = WorkflowDebugEnvelopeKind::Request;
+		stackTrace.command = L"stackTrace";
+		stackTrace.sessionId = L"wf-stack";
+		stackTrace.seq = 10;
+		TEST_ASSERT(session.Dispatch(stackTrace) == true);
+
+		WorkflowDebugEnvelope stackTraceResponse;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(stackTraceResponse) == true);
+		TEST_ASSERT(stackTraceResponse.kind == WorkflowDebugEnvelopeKind::Response);
+		TEST_ASSERT(stackTraceResponse.replyTo == 10);
+		TEST_ASSERT(stackTraceResponse.command == L"stackTrace");
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"totalFrames\":2"));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"functionName\":\"Main\""));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"functionName\":\"Helper\""));
+		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"sourcePath\":\"D:\\/src\\/main.wf\""));
+
+		WorkflowDebugEnvelope scopes = stackTrace;
+		scopes.command = L"scopes";
+		scopes.seq = 11;
+		scopes.body = L"{\"frameId\":1}";
+		TEST_ASSERT(session.Dispatch(scopes) == true);
+
+		WorkflowDebugEnvelope scopesResponse;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(scopesResponse) == true);
+		TEST_ASSERT(scopesResponse.kind == WorkflowDebugEnvelopeKind::Response);
+		TEST_ASSERT(scopesResponse.replyTo == 11);
+		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"scopes\""));
+		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Local\""));
+		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Argument\""));
+		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Captured\""));
+		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Global\""));
+
+		WorkflowDebugEnvelope variables = stackTrace;
+		variables.command = L"variables";
+		variables.seq = 12;
+		variables.body = L"{\"frameId\":1,\"scopeKind\":\"Local\"}";
+		TEST_ASSERT(session.Dispatch(variables) == true);
+
+		WorkflowDebugEnvelope variablesResponse;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(variablesResponse) == true);
+		TEST_ASSERT(variablesResponse.kind == WorkflowDebugEnvelopeKind::Response);
+		TEST_ASSERT(variablesResponse.replyTo == 12);
+		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"variables\""));
+		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"localValue\""));
+		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"42\""));
+
+		session.Detach();
+	});
+
+	TEST_CASE(L"RemoteWfDebugger 暂停恢复")
+	{
+		TestRemoteWfDebugger debugger;
+		std::atomic<bool> runResult = false;
+		std::atomic<bool> stopResult = false;
+
+		TEST_ASSERT(debugger.Pause() == true);
+		TEST_ASSERT(debugger.GetState() == runtime::WfDebugger::RequiredToPause);
+
+		std::thread runThread([&]()
+		{
+			runResult = debugger.WaitForContinueOnce();
+		});
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		TEST_ASSERT(debugger.RequestRun() == true);
+		runThread.join();
+
+		TEST_ASSERT(runResult.load() == true);
+		TEST_ASSERT(debugger.GetState() == runtime::WfDebugger::Running);
+
+		TEST_ASSERT(debugger.Pause() == true);
+		TEST_ASSERT(debugger.GetState() == runtime::WfDebugger::RequiredToPause);
+
+		std::thread stopThread([&]()
+		{
+			stopResult = debugger.WaitForContinueOnce();
+		});
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		TEST_ASSERT(debugger.RequestStop() == true);
+		stopThread.join();
+
+		TEST_ASSERT(stopResult.load() == false);
+		TEST_ASSERT(debugger.GetState() == runtime::WfDebugger::RequiredToStop);
 	});
 }

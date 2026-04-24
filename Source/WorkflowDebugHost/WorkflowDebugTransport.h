@@ -44,6 +44,7 @@ namespace vl
 
 				bool								Send(const WorkflowDebugEnvelope& envelope);
 				bool								TryReceive(WorkflowDebugEnvelope& envelope);
+				bool								TryPopOutgoing(WorkflowDebugEnvelope& envelope);
 				void								QueueIncoming(const WorkflowDebugEnvelope& envelope);
 
 			private:

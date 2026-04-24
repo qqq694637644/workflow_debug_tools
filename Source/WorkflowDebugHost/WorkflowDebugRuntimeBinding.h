@@ -11,6 +11,8 @@ Workflow::DebugHost
 
 #include "WorkflowDebugProtocol.h"
 #include "../Runtime/WfRuntimeDebugger.h"
+#include <condition_variable>
+#include <mutex>
 
 #ifdef VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
 
@@ -20,6 +22,12 @@ namespace vl
 	{
 		namespace debughost
 		{
+			class WorkflowDebugSessionState;
+			class WorkflowDebugSourceCatalog;
+			class WorkflowDebugStackInspector;
+			class WorkflowDebugValueInspector;
+			class WorkflowDebugRuntimeBinding;
+
 			/// <summary>
 			/// 远程调试器直接继承 WfDebugger，这样主进程内脚本执行线程就能复用现有暂停语义。
 			/// </summary>
@@ -29,10 +37,24 @@ namespace vl
 				RemoteWfDebugger();
 				~RemoteWfDebugger();
 
+				void							SetRuntimeBinding(WorkflowDebugRuntimeBinding* value);
+
+				bool							RequestRun();
+				bool							RequestPause();
+				bool							RequestStop();
+				bool							RequestStepOver(bool beforeCodegen = true);
+				bool							RequestStepInto(bool beforeCodegen = true);
+
 			protected:
 				void							OnStartExecution() override;
 				void							OnBlockExecution() override;
 				void							OnStopExecution() override;
+
+			private:
+				WorkflowDebugRuntimeBinding*	binding = nullptr;
+				std::mutex						controlMutex;
+				std::condition_variable			controlCondition;
+				bool							pauseSnapshotCaptured = false;
 			};
 
 			/// <summary>
@@ -46,12 +68,25 @@ namespace vl
 				~WorkflowDebugRuntimeBinding();
 
 				void								Bind(const Ptr<runtime::WfDebugger>& debugger);
+				void								AttachDebugData(
+					WorkflowDebugSessionState*		state,
+					WorkflowDebugSourceCatalog*		sourceCatalog,
+					WorkflowDebugStackInspector*	stackInspector,
+					WorkflowDebugValueInspector*	valueInspector
+				);
 				void								Unbind();
 				bool								IsBound() const;
 				Ptr<runtime::WfDebugger>			GetDebugger() const;
+				Ptr<RemoteWfDebugger>				GetRemoteDebugger() const;
+				void								CapturePausedState();
 
 			private:
 				Ptr<runtime::WfDebugger>			debugger;
+				Ptr<RemoteWfDebugger>				remoteDebugger;
+				WorkflowDebugSessionState*			state = nullptr;
+				WorkflowDebugSourceCatalog*			sourceCatalog = nullptr;
+				WorkflowDebugStackInspector*		stackInspector = nullptr;
+				WorkflowDebugValueInspector*		valueInspector = nullptr;
 			};
 		}
 	}

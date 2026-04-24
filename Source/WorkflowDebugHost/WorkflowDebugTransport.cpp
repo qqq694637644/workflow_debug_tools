@@ -14,6 +14,7 @@ Workflow::DebugHost
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <limits>
 #include <string>
 
 #pragma comment(lib, "Ws2_32.lib")
@@ -142,19 +143,29 @@ namespace vl
 						return false;
 					}
 
+					// 调试协议里的序号和偏移值都应该落在 vint 可表示范围内；
+					// 如果远端传来异常大数值，直接拒绝比静默截断更安全。
+					vint64_t parsedValue = 0;
 					if (auto numberNode = dynamic_cast<JsonNumber*>(node.Obj()))
 					{
-						value = wtoi64(numberNode->content.value);
-						return true;
+						parsedValue = wtoi64(numberNode->content.value);
 					}
-
-					if (auto stringNode = dynamic_cast<JsonString*>(node.Obj()))
+					else if (auto stringNode = dynamic_cast<JsonString*>(node.Obj()))
 					{
-						value = wtoi64(stringNode->content.value);
-						return true;
+						parsedValue = wtoi64(stringNode->content.value);
+					}
+					else
+					{
+						return false;
 					}
 
-					return false;
+					if (parsedValue < (std::numeric_limits<vint>::min)() || parsedValue > (std::numeric_limits<vint>::max)())
+					{
+						return false;
+					}
+
+					value = (vint)parsedValue;
+					return true;
 				}
 
 				static WString SerializeEnvelopeToJson(const WorkflowDebugEnvelope& envelope)
@@ -425,6 +436,19 @@ namespace vl
 					return true;
 				}
 
+				bool TryPopOutgoing(WorkflowDebugEnvelope& envelope)
+				{
+					std::lock_guard<std::mutex> guard(queueMutex);
+					if (outgoing.Count() == 0)
+					{
+						return false;
+					}
+
+					envelope = outgoing[0];
+					outgoing.RemoveAt(0);
+					return true;
+				}
+
 				void QueueIncoming(const WorkflowDebugEnvelope& envelope)
 				{
 					std::lock_guard<std::mutex> guard(queueMutex);
@@ -597,6 +621,11 @@ namespace vl
 			bool WorkflowDebugTransport::TryReceive(WorkflowDebugEnvelope& envelope)
 			{
 				return impl->TryReceive(envelope);
+			}
+
+			bool WorkflowDebugTransport::TryPopOutgoing(WorkflowDebugEnvelope& envelope)
+			{
+				return impl->TryPopOutgoing(envelope);
 			}
 
 			void WorkflowDebugTransport::QueueIncoming(const WorkflowDebugEnvelope& envelope)
