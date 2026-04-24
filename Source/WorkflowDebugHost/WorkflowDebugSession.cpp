@@ -70,7 +70,11 @@ namespace vl
 				stackInspector->Clear();
 				valueInspector->Clear();
 				runtimeBinding->Bind(debugger);
-				runtimeBinding->AttachDebugData(state.Obj(), sourceCatalog.Obj(), stackInspector.Obj(), valueInspector.Obj(), bridge.Obj());
+				runtimeBinding->AttachDebugData(state.Obj(), sourceCatalog.Obj(), breakpointRegistry.Obj(), stackInspector.Obj(), valueInspector.Obj(), bridge.Obj());
+				if (assembly)
+				{
+					runtimeBinding->SetAssembly(assembly);
+				}
 				if (transport->GetEndpointPort() > 0)
 				{
 					CHECK_ERROR(transport->Connect(), L"无法连接到调试适配器。");
@@ -124,7 +128,7 @@ namespace vl
 				}
 				dispatchLoopRunning = false;
 				runtimeBinding->Unbind();
-				runtimeBinding->AttachDebugData(nullptr, nullptr, nullptr, nullptr, nullptr);
+				runtimeBinding->AttachDebugData(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
 				transport->Close();
 				if (dispatchThread.joinable())
 				{
@@ -138,6 +142,7 @@ namespace vl
 				breakpointRegistry->Clear();
 				stackInspector->Clear();
 				valueInspector->Clear();
+				assembly = nullptr;
 			}
 
 			bool WorkflowDebugSession::Dispatch(const WorkflowDebugEnvelope& envelope)
@@ -151,6 +156,15 @@ namespace vl
 				for (auto source : value)
 				{
 					sourceMap.Add(source);
+				}
+			}
+
+			void WorkflowDebugSession::SetAssembly(const Ptr<runtime::WfAssembly>& value)
+			{
+				assembly = value;
+				if (runtimeBinding)
+				{
+					runtimeBinding->SetAssembly(assembly);
 				}
 			}
 
@@ -190,6 +204,43 @@ namespace vl
 						return true;
 					}
 					if (phase == WorkflowDebugSessionPhase::Closed)
+					{
+						return false;
+					}
+					if (transport && !transport->IsOpen())
+					{
+						return false;
+					}
+
+					if (timeoutMilliseconds > 0)
+					{
+						auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count();
+						if (elapsed >= timeoutMilliseconds)
+						{
+							return false;
+						}
+					}
+
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				}
+			}
+
+			bool WorkflowDebugSession::WaitForBreakpointSync(vint timeoutMilliseconds)
+			{
+				// 给 VSCode 一小段时间下发断点，避免脚本刚启动就越过第一条可断位置。
+				if (!breakpointRegistry)
+				{
+					return false;
+				}
+
+				auto begin = std::chrono::steady_clock::now();
+				while (true)
+				{
+					if (breakpointRegistry->Count() > 0)
+					{
+						return true;
+					}
+					if (state && state->GetPhase() == WorkflowDebugSessionPhase::Closed)
 					{
 						return false;
 					}

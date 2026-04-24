@@ -15,7 +15,7 @@
     {
       "name": "Workflow mytest",
       "type": "workflow",
-      "request": "attach",
+      "request": "launch",
       "host": "127.0.0.1",
       "port": 4711,
       "workspaceRoot": "${workspaceFolder}\\Test\\UnitTest\\mytest",

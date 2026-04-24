@@ -74,7 +74,6 @@ namespace
 			options.enabled = true;
 			return true;
 		}
-
 		if (argument.Length() >= debugPrefix.Length() && argument.Left(debugPrefix.Length()) == debugPrefix)
 		{
 			auto value = argument.Right(argument.Length() - debugPrefix.Length());
@@ -279,9 +278,12 @@ namespace
 			List<WorkflowDebugSourceRecord> sourceMap;
 			BuildDebugSourceMap(scriptCase, sourceMap);
 			gWorkflowDebugSession->SetSourceMap(sourceMap);
+			gWorkflowDebugSession->SetAssembly(assembly);
 			Console::WriteLine(L"正在发送 Workflow 调试 hello。");
 			CHECK_ERROR(gWorkflowDebugSession->SendHello(), L"发送 Workflow 调试 hello 失败。");
 			CHECK_ERROR(gWorkflowDebugSession->WaitForReady(5000), L"等待 Workflow 调试器完成握手超时。");
+			// LuaPanda 会在初始化完成后短暂等待断点同步，这里保持同样的节奏，避免第一行先于 F2 断点到达。
+			gWorkflowDebugSession->WaitForBreakpointSync(1000);
 			Console::WriteLine(L"Workflow 调试握手完成。");
 		}
 #endif

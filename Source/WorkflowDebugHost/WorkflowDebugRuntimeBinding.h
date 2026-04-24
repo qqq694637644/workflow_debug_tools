@@ -24,6 +24,7 @@ namespace vl
 		{
 			class WorkflowDebugSessionState;
 			class WorkflowDebugSourceCatalog;
+			class WorkflowDebugBreakpointRegistry;
 			class WorkflowDebugStackInspector;
 			class WorkflowDebugValueInspector;
 			class WorkflowDebugBridge;
@@ -73,10 +74,13 @@ namespace vl
 				void								AttachDebugData(
 					WorkflowDebugSessionState*		state,
 					WorkflowDebugSourceCatalog*		sourceCatalog,
+					WorkflowDebugBreakpointRegistry* breakpointRegistry,
 					WorkflowDebugStackInspector*	stackInspector,
 					WorkflowDebugValueInspector*	valueInspector,
 					WorkflowDebugBridge*			bridge
 				);
+				void								SetAssembly(const Ptr<runtime::WfAssembly>& value);
+				void								RefreshBreakpoints();
 				void								Unbind();
 				bool								RequestStopOnEntry();
 				bool								IsBound() const;
@@ -90,9 +94,13 @@ namespace vl
 				bool								stopOnEntryPending = false;
 				WorkflowDebugSessionState*			state = nullptr;
 				WorkflowDebugSourceCatalog*			sourceCatalog = nullptr;
+				WorkflowDebugBreakpointRegistry*	breakpointRegistry = nullptr;
 				WorkflowDebugStackInspector*		stackInspector = nullptr;
 				WorkflowDebugValueInspector*		valueInspector = nullptr;
 				WorkflowDebugBridge*				bridge = nullptr;
+				Ptr<runtime::WfAssembly>			assembly;
+				collections::List<vint>				installedBreakpointIndices;
+				bool								breakpointsDirty = false;
 			};
 		}
 	}

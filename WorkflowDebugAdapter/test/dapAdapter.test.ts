@@ -390,9 +390,11 @@ class DapClient {
 async function startFakeHost(port: number): Promise<{
   readonly transport: BridgeTransport<ProtocolEnvelope>;
   readonly runtimeControl: RecordingRuntimeControl;
+  readonly disconnectRequests: Array<{ readonly reason: string; readonly restart: boolean }>;
   close(): Promise<void>;
 }> {
   const runtimeControl = new RecordingRuntimeControl();
+  const disconnectRequests: Array<{ readonly reason: string; readonly restart: boolean }> = [];
   const target = new TargetSessionMachine({
     runtimeVersion: '0.1.0',
     capabilities: DEFAULT_CAPABILITIES,
@@ -505,6 +507,15 @@ async function startFakeHost(port: number): Promise<{
         const variablesRequest = message as RequestEnvelope<'variables'>;
         const response = target.receiveVariables(variablesRequest);
         await transport.send(response);
+        return;
+      }
+
+      if (message.type === 'request' && message.cmd === 'disconnect') {
+        const disconnectRequest = message as RequestEnvelope<'disconnect'>;
+        disconnectRequests.push({
+          reason: disconnectRequest.body.reason,
+          restart: disconnectRequest.body.restart
+        });
       }
     })().catch((error) => {
       console.error(error);
@@ -517,13 +528,14 @@ async function startFakeHost(port: number): Promise<{
   return {
     transport,
     runtimeControl,
+    disconnectRequests,
     async close(): Promise<void> {
       await transport.close();
     }
   };
 }
 
-async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
+async function verifyWorkflowDebugAdapterPluginFlow(requestCommand: 'attach' | 'launch'): Promise<void> {
   const port = await reservePort();
   const scriptPath = fileURLToPath(new URL('../src/dapMain.js', import.meta.url));
   const client = new DapClient(scriptPath);
@@ -533,14 +545,14 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       adapterID: 'workflow'
     });
     assert.equal(initializeResponse.success, true);
-    assert.equal((initializeResponse.body as { readonly supportsRestartRequest?: boolean } | undefined)?.supportsRestartRequest, false);
+    assert.equal((initializeResponse.body as { readonly supportsRestartRequest?: boolean } | undefined)?.supportsRestartRequest, true);
     const receivedMessages = client.getReceivedMessages();
     const initializeResponseIndex = receivedMessages.findIndex((message) => message.type === 'response' && message.request_seq === 1 && message.command === 'initialize');
     assert.ok(initializeResponseIndex >= 0);
-    const outputBeforeAttach = receivedMessages.find((message) => message.type === 'event' && message.event === 'output');
-    assert.equal(outputBeforeAttach, undefined);
+    const outputBeforeStart = receivedMessages.find((message) => message.type === 'event' && message.event === 'output');
+    assert.equal(outputBeforeStart, undefined);
 
-    const attachRequest = client.request('attach', {
+    const startRequest = client.request(requestCommand, {
       host: '127.0.0.1',
       port,
       workspaceRoot: 'C:/workspace/Workflow-master',
@@ -558,8 +570,8 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
 
     const host = await startFakeHost(port);
     try {
-      const attachResponse = await attachRequest;
-      assert.equal(attachResponse.success, true);
+      const startResponse = await startRequest;
+      assert.equal(startResponse.success, true);
       await client.waitForEvent('initialized');
 
       const setBreakpointsResponse = await client.request('setBreakpoints', {
@@ -658,6 +670,12 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       const restartResponse = await client.request('restart');
       assert.equal(restartResponse.success, true);
       await client.waitForEvent('terminated');
+      assert.deepEqual(host.disconnectRequests, [
+        {
+          reason: 'restart',
+          restart: true
+        }
+      ]);
       await waitForPortBindable(port);
     }
     finally {
@@ -670,8 +688,9 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  await verifyWorkflowDebugAdapterPluginFlow();
-  console.log('WorkflowDebugAdapter VSCode 插件附加与单步检查通过。');
+  await verifyWorkflowDebugAdapterPluginFlow('attach');
+  await verifyWorkflowDebugAdapterPluginFlow('launch');
+  console.log('WorkflowDebugAdapter VSCode 插件附加与启动检查通过。');
 }
 
 try {

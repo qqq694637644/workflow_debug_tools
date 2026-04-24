@@ -21,6 +21,11 @@ namespace vl
 				return itow(threadId) + L":" + itow(frameId);
 			}
 
+			static WString BuildScopeKey(vint threadId, vint frameId, WorkflowDebugScopeKind kind)
+			{
+				return itow(threadId) + L":" + itow(frameId) + L":" + itow((vint)kind);
+			}
+
 			static WString ScopeKindToName(WorkflowDebugScopeKind kind)
 			{
 				switch (kind)
@@ -51,6 +56,8 @@ namespace vl
 			void WorkflowDebugValueInspector::Clear()
 			{
 				framesByKey.Clear();
+				scopeReferences.Clear();
+				nextScopeReference = 1;
 			}
 
 			void WorkflowDebugValueInspector::ClearThread(vint threadId)
@@ -68,6 +75,21 @@ namespace vl
 				for (auto key : keysToRemove)
 				{
 					framesByKey.Remove(key);
+				}
+
+				keysToRemove.Clear();
+				auto scopePrefix = itow(threadId) + L":";
+				for (auto key : scopeReferences.Keys())
+				{
+					if (key.Length() >= scopePrefix.Length() && key.Left(scopePrefix.Length()) == scopePrefix)
+					{
+						keysToRemove.Add(key);
+					}
+				}
+
+				for (auto key : keysToRemove)
+				{
+					scopeReferences.Remove(key);
 				}
 			}
 
@@ -98,6 +120,20 @@ namespace vl
 				return false;
 			}
 
+			vint WorkflowDebugValueInspector::GetScopeReference(vint threadId, vint frameId, WorkflowDebugScopeKind kind) const
+			{
+				// 同一暂停现场里，scope 必须有稳定的非零句柄，适配器才会继续向下请求变量。
+				auto key = BuildScopeKey(threadId, frameId, kind);
+				if (auto index = scopeReferences.Keys().IndexOf(key); index != -1)
+				{
+					return scopeReferences.Values()[index];
+				}
+
+				auto reference = nextScopeReference++;
+				scopeReferences.Set(key, reference);
+				return reference;
+			}
+
 			bool WorkflowDebugValueInspector::TryGetScopes(vint threadId, vint frameId, collections::List<WorkflowDebugScope>& scopes) const
 			{
 				WorkflowDebugFrameValues values;
@@ -111,28 +147,32 @@ namespace vl
 				WorkflowDebugScope localScope;
 				localScope.kind = WorkflowDebugScopeKind::Local;
 				localScope.name = ScopeKindToName(localScope.kind);
-				localScope.variablesReference = 0;
+				localScope.variablesReference = GetScopeReference(threadId, frameId, localScope.kind);
+				localScope.canExpand = true;
 				localScope.namedVariables = values.local.Count();
 				scopes.Add(localScope);
 
 				WorkflowDebugScope argumentScope;
 				argumentScope.kind = WorkflowDebugScopeKind::Argument;
 				argumentScope.name = ScopeKindToName(argumentScope.kind);
-				argumentScope.variablesReference = 0;
+				argumentScope.variablesReference = GetScopeReference(threadId, frameId, argumentScope.kind);
+				argumentScope.canExpand = true;
 				argumentScope.namedVariables = values.argument.Count();
 				scopes.Add(argumentScope);
 
 				WorkflowDebugScope capturedScope;
 				capturedScope.kind = WorkflowDebugScopeKind::Captured;
 				capturedScope.name = ScopeKindToName(capturedScope.kind);
-				capturedScope.variablesReference = 0;
+				capturedScope.variablesReference = GetScopeReference(threadId, frameId, capturedScope.kind);
+				capturedScope.canExpand = true;
 				capturedScope.namedVariables = values.captured.Count();
 				scopes.Add(capturedScope);
 
 				WorkflowDebugScope globalScope;
 				globalScope.kind = WorkflowDebugScopeKind::Global;
 				globalScope.name = ScopeKindToName(globalScope.kind);
-				globalScope.variablesReference = 0;
+				globalScope.variablesReference = GetScopeReference(threadId, frameId, globalScope.kind);
+				globalScope.canExpand = true;
 				globalScope.namedVariables = values.global.Count();
 				scopes.Add(globalScope);
 

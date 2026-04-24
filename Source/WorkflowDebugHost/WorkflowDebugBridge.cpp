@@ -292,6 +292,7 @@ namespace vl
 					AddField(object.Obj(), L"kind", CreateString(ScopeKindToText(scope.kind)));
 					AddField(object.Obj(), L"name", CreateString(scope.name));
 					AddField(object.Obj(), L"variablesReference", CreateNumber(scope.variablesReference));
+					AddField(object.Obj(), L"canExpand", CreateLiteral(scope.canExpand));
 					AddField(object.Obj(), L"namedVariables", CreateNumber(scope.namedVariables));
 					AddField(object.Obj(), L"indexedVariables", CreateNumber(scope.indexedVariables));
 					return object;
@@ -304,7 +305,7 @@ namespace vl
 					AddField(object.Obj(), L"type", CreateString(variable.type));
 					AddField(object.Obj(), L"value", CreateString(variable.value));
 					AddField(object.Obj(), L"variablesReference", CreateNumber(variable.variablesReference));
-					AddField(object.Obj(), L"canExpand", CreateNumber(variable.canExpand ? 1 : 0));
+					AddField(object.Obj(), L"canExpand", CreateLiteral(variable.canExpand));
 					AddField(object.Obj(), L"namedVariables", CreateNumber(variable.namedVariables));
 					AddField(object.Obj(), L"indexedVariables", CreateNumber(variable.indexedVariables));
 					return object;
@@ -768,6 +769,10 @@ namespace vl
 				{
 					return HandleException(envelope);
 				}
+				if (envelope.command == L"disconnect")
+				{
+					return HandleDisconnect(envelope);
+				}
 
 				return false;
 			}
@@ -897,6 +902,11 @@ namespace vl
 					}
 				}
 
+				if (runtimeBinding)
+				{
+					runtimeBinding->RefreshBreakpoints();
+				}
+
 				return true;
 			}
 
@@ -983,19 +993,43 @@ namespace vl
 				return true;
 			}
 
+			bool WorkflowDebugBridge::HandleDisconnect(const WorkflowDebugEnvelope& envelope)
+			{
+				auto body = ParseJsonObject(envelope.body);
+				WString reason = L"disconnect";
+				bool restart = false;
+				if (body)
+				{
+					TryReadStringField(body.Obj(), L"reason", reason);
+					TryReadOptionalBooleanField(body.Obj(), L"restart", restart);
+				}
+
+				(void)restart;
+				if (runtimeBinding)
+				{
+					auto debugger = runtimeBinding->GetRemoteDebugger();
+					if (debugger)
+					{
+						debugger->RequestStop();
+					}
+				}
+
+				return NotifyDisconnect(reason, restart);
+			}
+
 			bool WorkflowDebugBridge::NotifyStopped()
 			{
 				return SendEvent(state, transport, L"stopped", BuildStoppedBody(state));
 			}
 
-			bool WorkflowDebugBridge::NotifyDisconnect(const WString& reason)
+			bool WorkflowDebugBridge::NotifyDisconnect(const WString& reason, bool restart)
 			{
 				if (state)
 				{
 					state->SetPhase(WorkflowDebugSessionPhase::Closed);
 				}
 				// 正常结束时先通知适配器，再关闭底层连接，避免 VSCode 把收尾当成异常断开。
-				return SendEvent(state, transport, L"disconnect", BuildDisconnectBody(reason, false));
+				return SendEvent(state, transport, L"disconnect", BuildDisconnectBody(reason, restart));
 			}
 
 			bool WorkflowDebugBridge::NotifyHello(const WString& runtimeVersion, const collections::List<WorkflowDebugSourceRecord>& sourceMap)

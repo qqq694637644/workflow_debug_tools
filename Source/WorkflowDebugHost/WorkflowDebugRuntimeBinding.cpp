@@ -8,6 +8,7 @@ Workflow::DebugHost
 
 #include "WorkflowDebugRuntimeBinding.h"
 #include "WorkflowDebugBridge.h"
+#include "WorkflowDebugBreakpointRegistry.h"
 #include "WorkflowDebugSessionState.h"
 #include "WorkflowDebugSourceCatalog.h"
 #include "WorkflowDebugStackInspector.h"
@@ -28,6 +29,18 @@ namespace vl
 		{
 			namespace
 			{
+				static void ClearInstalledBreakpoints(runtime::WfDebugger* debugger, collections::List<vint>& installedBreakpointIndices)
+				{
+					if (debugger)
+					{
+						for (vint i = installedBreakpointIndices.Count() - 1; i >= 0; --i)
+						{
+							debugger->RemoveBreakPoint(installedBreakpointIndices[i]);
+						}
+					}
+					installedBreakpointIndices.Clear();
+				}
+
 				static WString DescribeValue(const reflection::description::Value& value)
 				{
 					if (value.IsNull())
@@ -264,11 +277,13 @@ namespace vl
 				{
 					workflow::runtime::SetDebuggerForCurrentThread(debugger);
 				}
+				RefreshBreakpoints();
 			}
 
 			void WorkflowDebugRuntimeBinding::AttachDebugData(
 				WorkflowDebugSessionState* valueState,
 				WorkflowDebugSourceCatalog* valueSourceCatalog,
+				WorkflowDebugBreakpointRegistry* valueBreakpointRegistry,
 				WorkflowDebugStackInspector* valueStackInspector,
 				WorkflowDebugValueInspector* valueValueInspector,
 				WorkflowDebugBridge* valueBridge
@@ -276,13 +291,51 @@ namespace vl
 			{
 				state = valueState;
 				sourceCatalog = valueSourceCatalog;
+				breakpointRegistry = valueBreakpointRegistry;
 				stackInspector = valueStackInspector;
 				valueInspector = valueValueInspector;
 				bridge = valueBridge;
+				breakpointsDirty = true;
+				RefreshBreakpoints();
+			}
+
+			void WorkflowDebugRuntimeBinding::SetAssembly(const Ptr<runtime::WfAssembly>& value)
+			{
+				assembly = value;
+				breakpointsDirty = true;
+				RefreshBreakpoints();
+			}
+
+			void WorkflowDebugRuntimeBinding::RefreshBreakpoints()
+			{
+				if (!debugger || !assembly || !breakpointRegistry)
+				{
+					return;
+				}
+
+				// 断点可能会在 hello/initialize 之后分批到达，所以每次刷新都先清空旧的运行时断点，再按当前 registry 重建。
+				ClearInstalledBreakpoints(debugger.Obj(), installedBreakpointIndices);
+
+				for (auto breakpoint : breakpointRegistry->GetBreakpoints())
+				{
+					if (!breakpoint.verified || breakpoint.codeIndex < 0 || breakpoint.row < 0)
+					{
+						continue;
+					}
+
+					auto breakpointIndex = debugger->AddCodeLineBreakPoint(assembly.Obj(), breakpoint.codeIndex, breakpoint.row, breakpoint.beforeCodegen);
+					if (breakpointIndex >= 0)
+					{
+						installedBreakpointIndices.Add(breakpointIndex);
+					}
+				}
+
+				breakpointsDirty = false;
 			}
 
 			void WorkflowDebugRuntimeBinding::Unbind()
 			{
+				ClearInstalledBreakpoints(debugger.Obj(), installedBreakpointIndices);
 				if (remoteDebugger)
 				{
 					remoteDebugger->SetRuntimeBinding(nullptr);
@@ -297,9 +350,12 @@ namespace vl
 				stopOnEntryPending = false;
 				state = nullptr;
 				sourceCatalog = nullptr;
+				breakpointRegistry = nullptr;
 				stackInspector = nullptr;
 				valueInspector = nullptr;
 				bridge = nullptr;
+				assembly = nullptr;
+				breakpointsDirty = false;
 			}
 
 			bool WorkflowDebugRuntimeBinding::RequestStopOnEntry()

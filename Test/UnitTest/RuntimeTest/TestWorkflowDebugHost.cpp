@@ -475,9 +475,17 @@ TEST_FILE
 		TEST_ASSERT(valueInspector.TryGetScopes(1, 1, scopes) == true);
 		TEST_ASSERT(scopes.Count() == 4);
 		TEST_ASSERT(scopes[0].kind == WorkflowDebugScopeKind::Local);
+		TEST_ASSERT(scopes[0].variablesReference > 0);
+		TEST_ASSERT(scopes[0].canExpand == true);
 		TEST_ASSERT(scopes[1].kind == WorkflowDebugScopeKind::Argument);
+		TEST_ASSERT(scopes[1].variablesReference > 0);
+		TEST_ASSERT(scopes[1].canExpand == true);
 		TEST_ASSERT(scopes[2].kind == WorkflowDebugScopeKind::Captured);
+		TEST_ASSERT(scopes[2].variablesReference > 0);
+		TEST_ASSERT(scopes[2].canExpand == true);
 		TEST_ASSERT(scopes[3].kind == WorkflowDebugScopeKind::Global);
+		TEST_ASSERT(scopes[3].variablesReference > 0);
+		TEST_ASSERT(scopes[3].canExpand == true);
 
 		collections::List<WorkflowDebugVariable> loadedVariables;
 		TEST_ASSERT(valueInspector.TryGetVariables(1, 1, WorkflowDebugScopeKind::Local, loadedVariables) == true);
@@ -488,6 +496,49 @@ TEST_FILE
 		TEST_ASSERT(valueInspector.TryGetVariables(1, 1, WorkflowDebugScopeKind::Argument, loadedVariables) == true);
 		TEST_ASSERT(loadedVariables.Count() == 1);
 		TEST_ASSERT(loadedVariables[0].name == L"argumentValue");
+	});
+
+	TEST_CASE(L"WorkflowDebugRuntimeBinding 断点刷新")
+	{
+		auto CreateThreadContextFromSample = [](const WString& name)
+		{
+			List<WString> moduleCodes;
+			moduleCodes.Add(LoadSample(L"Debugger", name));
+			List<glr::ParsingError> errors;
+			auto assembly = Compile(GetWorkflowParser(), WfCpuArchitecture::AsExecutable, moduleCodes, errors);
+			TEST_ASSERT(assembly && errors.Count() == 0);
+			return Ptr(new WfRuntimeGlobalContext(assembly));
+		};
+
+		WorkflowDebugSourceCatalog catalog;
+		TEST_ASSERT(catalog.RegisterSource(0, L"D:/src/Assignment.wf", 0));
+
+		WorkflowDebugBreakpointRegistry registry(&catalog);
+		WorkflowDebugBreakpointRecord breakpoint;
+		breakpoint.breakpointId = L"wf-bp-1";
+		breakpoint.sourcePath = L"D:/src/Assignment.wf";
+		breakpoint.codeIndex = 0;
+		breakpoint.row = 5;
+		auto breakpointIndex = registry.RegisterBreakpoint(breakpoint);
+		TEST_ASSERT(breakpointIndex == 0);
+		TEST_ASSERT(registry.GetBreakpoints()[0].verified == true);
+
+		Ptr<TestRemoteWfDebugger> debugger = Ptr(new TestRemoteWfDebugger);
+		Ptr<runtime::WfDebugger> debuggerBase = debugger;
+		WorkflowDebugRuntimeBinding binding;
+		binding.Bind(debuggerBase);
+		binding.AttachDebugData(nullptr, &catalog, &registry, nullptr, nullptr, nullptr);
+
+		auto context = CreateThreadContextFromSample(L"Assignment");
+		binding.SetAssembly(context->assembly);
+
+		TEST_ASSERT(debugger->GetBreakPointCount() == 1);
+		const auto& installed = debugger->GetBreakPoint(0);
+		TEST_ASSERT(installed.available == true);
+		TEST_ASSERT(installed.type == runtime::WfBreakPoint::Instruction);
+		TEST_ASSERT(installed.assembly == context->assembly.Obj());
+
+		binding.Unbind();
 	});
 
 	TEST_CASE(L"WorkflowDebugSession 任务流")
@@ -709,6 +760,7 @@ TEST_FILE
 		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Argument\""));
 		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Captured\""));
 		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Global\""));
+		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"canExpand\":true"));
 
 		WorkflowDebugEnvelope variables = stackTrace;
 		variables.command = L"variables";
@@ -723,6 +775,7 @@ TEST_FILE
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"variables\""));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"localValue\""));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"42\""));
+		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"canExpand\":false"));
 
 		session.Detach();
 	});

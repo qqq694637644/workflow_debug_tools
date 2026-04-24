@@ -380,6 +380,14 @@ export class AdapterSessionMachine extends BaseSessionMachine {
     return request;
   }
 
+  public createDisconnect(reason: string, restart: boolean): RequestEnvelope<'disconnect'> {
+    this.requirePhase(['negotiating', 'initializing', 'ready', 'paused', 'running'], '只能在调试会话建立后断开。');
+    return this.createRequest('disconnect', {
+      reason,
+      restart
+    });
+  }
+
   public createStackTrace(
     threadId: number,
     startFrame = 0,
@@ -451,6 +459,11 @@ export class AdapterSessionMachine extends BaseSessionMachine {
     });
     this.setPhase('paused');
     return stackState;
+  }
+
+  public receiveDisconnect(message: EventEnvelope<'disconnect'>): void {
+    this.acceptInbound(message);
+    this.detach('disconnect');
   }
 
   public receiveStackTrace(message: ResponseEnvelope<'stackTrace'>): StackTraceState {

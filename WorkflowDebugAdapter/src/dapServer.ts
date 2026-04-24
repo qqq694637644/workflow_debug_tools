@@ -91,6 +91,12 @@ function normalizeBoolean(value: unknown, name: string, defaultValue: boolean): 
   return value;
 }
 
+export function shouldFailPendingRequestsOnShutdown(reason: string): boolean {
+  // 只有真正的握手超时才需要把等待中的请求显式失败；
+  // 正常断开或用户结束会话时如果也抛出“会话已关闭”，VSCode 会把它当成调试失败弹窗。
+  return reason === 'attach timeout';
+}
+
 function toSourceBreakpoints(breakpoints: ReadonlyArray<DapBreakpoint>): ReadonlyArray<SourceBreakpointInput> {
   return breakpoints.map((breakpoint) => ({
     line: breakpoint.line,
@@ -189,8 +195,11 @@ export class WorkflowDebugDapServer {
         case 'initialize':
           this.sendResponse(message, this.createInitializeResponse());
           return;
+        case 'launch':
+          await this.handleAttachRequest(message, 'launch');
+          return;
         case 'attach':
-          await this.handleAttachRequest(message);
+          await this.handleAttachRequest(message, 'attach');
           return;
         case 'configurationDone':
           this.sendResponse(message, {});
@@ -246,7 +255,7 @@ export class WorkflowDebugDapServer {
     }
   }
 
-  private async handleAttachRequest(message: DapRequestMessage): Promise<void> {
+  private async handleAttachRequest(message: DapRequestMessage, mode: 'attach' | 'launch' = 'attach'): Promise<void> {
     const args = this.parseAttachArguments(message.arguments);
     if (this.attached) {
       throw new Error('当前只允许一个 Workflow 调试会话。');
@@ -264,8 +273,8 @@ export class WorkflowDebugDapServer {
       host: args.host ?? '127.0.0.1',
       port: args.port
     };
-    this.log(`开始 attach，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
-    traceDebugMessage('dapServer', `开始 attach，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
+    this.log(`开始 ${mode}，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
+    traceDebugMessage('dapServer', `开始 ${mode}，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
     this.transport = new BridgeTransport<ProtocolEnvelope>({
       name: 'workflow-debug-dap',
       mode: 'server',
@@ -298,13 +307,13 @@ export class WorkflowDebugDapServer {
       );
     }
     catch (error) {
-      this.log(`attach 超时或失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-      await this.shutdown('attach timeout');
+      this.log(`${mode} 超时或失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      await this.shutdown(`${mode} timeout`);
       throw error;
     }
 
-    this.log('attach 完成，双方握手成功。');
-    traceDebugMessage('dapServer', 'attach 完成，双方握手成功。');
+    this.log(`${mode} 完成，双方握手成功。`);
+    traceDebugMessage('dapServer', `${mode} 完成，双方握手成功。`);
     this.sendEvent('initialized', {});
     this.sendResponse(message, {});
     this.flushBufferedOutputs();
@@ -433,9 +442,9 @@ export class WorkflowDebugDapServer {
   private async handleDisconnectRequest(message: DapRequestMessage): Promise<void> {
     this.log('收到 disconnect。');
     this.gracefulClose = true;
-    this.sendResponse(message, {});
     this.terminated = true;
-    this.failPendingRequests(new Error('调试会话已关闭。'));
+    await this.requestHostDisconnect('disconnect', false);
+    this.sendResponse(message, {});
     this.sendEvent('terminated', {});
     void this.disposeTransport();
   }
@@ -443,9 +452,9 @@ export class WorkflowDebugDapServer {
   private async handleRestartRequest(message: DapRequestMessage): Promise<void> {
     this.log('收到 restart。');
     this.gracefulClose = true;
-    this.sendResponse(message, {});
     this.terminated = true;
-    this.failPendingRequests(new Error('调试会话已关闭。'));
+    await this.requestHostDisconnect('restart', true);
+    this.sendResponse(message, {});
     this.sendEvent('terminated', {});
     void this.disposeTransport();
   }
@@ -586,9 +595,13 @@ export class WorkflowDebugDapServer {
       }
 
       if (message.type === 'event' && message.cmd === 'disconnect') {
-        this.terminated = true;
-        this.log('收到宿主断开事件。');
-        this.sendEvent('terminated', {});
+        this.adapter.receiveDisconnect(message as EventEnvelope<'disconnect'>);
+        const disconnectBody = message as EventEnvelope<'disconnect'>;
+        this.log(`收到宿主断开事件：reason=${disconnectBody.body.reason} restart=${disconnectBody.body.restart}。`);
+        if (!this.gracefulClose && !this.terminated) {
+          this.terminated = true;
+          this.sendEvent('terminated', {});
+        }
         return;
       }
     }
@@ -620,6 +633,20 @@ export class WorkflowDebugDapServer {
     await transport.send(request);
   }
 
+  private async requestHostDisconnect(reason: string, restart: boolean): Promise<void> {
+    if (!this.transport) {
+      return;
+    }
+
+    try {
+      await this.sendHostCommand(this.adapter.createDisconnect(reason, restart));
+      this.log(`已向宿主下发 disconnect：reason=${reason} restart=${restart}。`);
+    }
+    catch (error) {
+      this.log(`向宿主下发 disconnect 失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+    }
+  }
+
   private createInitializeResponse(): Record<string, unknown> {
     return {
       supportsConfigurationDoneRequest: true,
@@ -632,8 +659,7 @@ export class WorkflowDebugDapServer {
       supportsSetVariable: false,
       supportsStepBack: false,
       supportsStepInTargetsRequest: false,
-      // 参考 LuaPanda 的行为，不公开 restart，避免 VSCode 在断开后继续提示重启。
-      supportsRestartRequest: false,
+      supportsRestartRequest: true,
       supportsTerminateRequest: true,
       supportsThreadsRequest: true,
       supportsStackTraceRequest: true,
@@ -1006,7 +1032,9 @@ export class WorkflowDebugDapServer {
 
     this.terminated = true;
     this.log(`开始关闭调试会话：${reason}。`);
-    this.failPendingRequests(new Error('调试会话已关闭。'));
+    if (shouldFailPendingRequestsOnShutdown(reason)) {
+      this.failPendingRequests(new Error('调试会话已关闭。'));
+    }
     await this.disposeTransport();
   }
 

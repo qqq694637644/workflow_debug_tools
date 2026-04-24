@@ -20,6 +20,11 @@ namespace vl
 {
 	namespace workflow
 	{
+		namespace runtime
+		{
+			class WfDebugger;
+			class WfAssembly;
+		}
 		namespace debughost
 		{
 			class WorkflowDebugBridge;
@@ -47,8 +52,10 @@ namespace vl
 				void								Detach();
 				bool								Dispatch(const WorkflowDebugEnvelope& envelope);
 				void								SetSourceMap(const collections::List<WorkflowDebugSourceRecord>& sourceMap);
+				void								SetAssembly(const Ptr<runtime::WfAssembly>& assembly);
 				bool								SendHello();
 				bool								WaitForReady(vint timeoutMilliseconds);
+				bool								WaitForBreakpointSync(vint timeoutMilliseconds);
 
 				WorkflowDebugSessionState*			GetState() const;
 				WorkflowDebugTransport*				GetTransport() const;
@@ -70,6 +77,7 @@ namespace vl
 				Ptr<WorkflowDebugRuntimeBinding>	runtimeBinding;
 				Ptr<WorkflowDebugBridge>			bridge;
 				Ptr<runtime::WfDebugger>			debugger;
+				Ptr<runtime::WfAssembly>			assembly;
 				collections::List<WorkflowDebugSourceRecord>	sourceMap;
 				std::atomic<bool>					dispatchLoopRunning = false;
 				std::thread							dispatchThread;

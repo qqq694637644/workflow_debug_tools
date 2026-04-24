@@ -45,6 +45,7 @@ namespace vl
 				WorkflowDebugScopeKind	kind = WorkflowDebugScopeKind::Local;
 				WString					name;
 				vint					variablesReference = 0;
+				bool					canExpand = false;
 				vint					namedVariables = 0;
 				vint					indexedVariables = 0;
 			};
@@ -102,6 +103,10 @@ namespace vl
 
 			private:
 				collections::Dictionary<WString, WorkflowDebugFrameValues>	framesByKey;
+				mutable collections::Dictionary<WString, vint>				scopeReferences;
+				mutable vint												nextScopeReference = 1;
+
+				vint								GetScopeReference(vint threadId, vint frameId, WorkflowDebugScopeKind kind) const;
 			};
 		}
 	}

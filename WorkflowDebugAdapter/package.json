@@ -1,6 +1,6 @@
 {
   "name": "workflow-debug-adapter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "displayName": "Workflow 调试器",
@@ -23,6 +23,11 @@
     "onDebug:workflow"
   ],
   "contributes": {
+    "breakpoints": [
+      {
+        "language": "plaintext"
+      }
+    ],
     "debuggers": [
       {
         "type": "workflow",
@@ -31,6 +36,41 @@
         "runtime": "node",
         "configurationAttributes": {
           "attach": {
+            "required": [
+              "port",
+              "workspaceRoot"
+            ],
+            "properties": {
+              "host": {
+                "type": "string",
+                "default": "127.0.0.1",
+                "description": "调试适配器监听的主机地址，宿主程序会连接到这里。"
+              },
+              "port": {
+                "type": "number",
+                "description": "调试适配器监听的端口，宿主程序连接到该端口。"
+              },
+              "workspaceRoot": {
+                "type": "string",
+                "description": "当前工作区根目录，用来解析本地源码路径。"
+              },
+              "connectTimeoutMs": {
+                "type": "number",
+                "default": 0,
+                "description": "等待宿主连接的超时时间，单位毫秒。设置为 0 或留空表示无限等待。"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": true,
+                "description": "宿主连接并初始化后，是否在第一条可执行语句处自动暂停，默认 true。"
+              },
+              "pathMapping": {
+                "type": "array",
+                "description": "本地路径与远端路径的映射规则。"
+              }
+            }
+          },
+          "launch": {
             "required": [
               "port",
               "workspaceRoot"
@@ -78,6 +118,18 @@
             "stopOnEntry": true,
             "pathMapping": [],
             "internalConsoleOptions": "openOnSessionStart"
+          },
+          {
+            "name": "启动 Workflow",
+            "type": "workflow",
+            "request": "launch",
+            "host": "127.0.0.1",
+            "port": 4711,
+            "workspaceRoot": "${workspaceFolder}",
+            "connectTimeoutMs": 0,
+            "stopOnEntry": true,
+            "pathMapping": [],
+            "internalConsoleOptions": "openOnSessionStart"
           }
         ]
       }
@@ -85,7 +137,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node dist/test/sessionMachine.test.js && node dist/test/bridgeTransport.test.js && node dist/test/sourceMapping.test.js && node dist/test/executionControl.test.js && node dist/test/stackTrace.test.js && node dist/test/exceptionPause.test.js && node dist/test/fullFlow.test.js && node dist/test/variableExpansion.test.js && node dist/test/logFormat.test.js && node dist/test/attachTimeout.test.js && node dist/test/debugAdapterServerHost.test.js && node dist/test/dapAdapter.test.js"
+    "test": "npm run build && node dist/test/sessionMachine.test.js && node dist/test/bridgeTransport.test.js && node dist/test/sourceMapping.test.js && node dist/test/executionControl.test.js && node dist/test/stackTrace.test.js && node dist/test/exceptionPause.test.js && node dist/test/fullFlow.test.js && node dist/test/variableExpansion.test.js && node dist/test/logFormat.test.js && node dist/test/attachTimeout.test.js && node dist/test/shutdownPolicy.test.js && node dist/test/debugAdapterServerHost.test.js && node dist/test/dapAdapter.test.js"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
