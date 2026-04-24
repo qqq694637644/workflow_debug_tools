@@ -378,15 +378,23 @@ export class WorkflowDebugDapServer {
     const state = this.adapter.receiveStackTrace(response);
     for (const frame of state.frames) {
       const displayPath = this.adapter.getSourceCatalog().resolveDisplayPath(frame.sourcePath);
-      if (frame.sourcePath.startsWith('unknown://source/') || displayPath.startsWith('unknown://source/')) {
-        this.log(
-          `stackTrace 未解析帧：threadId=${frame.threadId}，frameId=${frame.frameId}，` +
-          `callStackIndex=${frame.callStackIndex}，sourcePath=${frame.sourcePath}，` +
-          `displayPath=${displayPath}，line=${frame.line}，column=${frame.column}。`
-        );
-      }
+      this.log(
+        `stackTrace 原始帧：threadId=${frame.threadId}，frameId=${frame.frameId}，` +
+        `callStackIndex=${frame.callStackIndex}，sourceId=${frame.sourceId}，` +
+        `sourcePath=${frame.sourcePath}，displayPath=${displayPath}，` +
+        `line=${frame.line}，column=${frame.column}，canRequestVariables=${frame.canRequestVariables}。`
+      );
     }
-    const stackFrames = state.frames.map((frame) => this.toDapStackFrame(frame));
+    const stackFrames = state.frames.map((frame) => {
+      const dapFrame = this.toDapStackFrame(frame);
+      const sourcePath = dapFrame.source?.path ?? '';
+      this.log(
+        `stackTrace DAP 帧：id=${dapFrame.id}，name=${dapFrame.name}，` +
+        `sourcePath=${sourcePath}，sourceName=${dapFrame.source?.name ?? ''}，` +
+        `line=${dapFrame.line}，column=${dapFrame.column ?? 'undefined'}。`
+      );
+      return dapFrame;
+    });
     this.sendResponse(message, {
       stackFrames,
       totalFrames: state.totalFrames
