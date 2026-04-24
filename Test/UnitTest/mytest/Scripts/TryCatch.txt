@@ -19,7 +19,8 @@ func Test2():void
 {
 	try
 	{
-		raise "Test2::catch";
+		var a = 1;
+		var b = 3;
 	}
 	catch(ex)
 	{

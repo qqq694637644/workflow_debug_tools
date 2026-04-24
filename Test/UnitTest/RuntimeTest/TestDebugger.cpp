@@ -174,15 +174,25 @@ TEST_FILE
 		}
 	});
 
-	auto CreateThreadContextFromSample = [](const WString& name)
-	{
-		List<WString> moduleCodes;
-		moduleCodes.Add(LoadSample(L"Debugger", name));
-		List<glr::ParsingError> errors;
-		auto assembly = Compile(GetWorkflowParser(), WfCpuArchitecture::AsExecutable, moduleCodes, errors);
-		TEST_ASSERT(assembly && errors.Count() == 0);
-		return Ptr(new WfRuntimeGlobalContext(assembly));
-	};
+		auto CreateThreadContextFromSample = [](const WString& name)
+		{
+			List<WString> moduleCodes;
+			moduleCodes.Add(LoadSample(L"Debugger", name));
+			List<glr::ParsingError> errors;
+			auto assembly = Compile(GetWorkflowParser(), WfCpuArchitecture::AsExecutable, moduleCodes, errors);
+			TEST_ASSERT(assembly && errors.Count() == 0);
+			return Ptr(new WfRuntimeGlobalContext(assembly));
+		};
+
+		auto CreateThreadContextFromCodegenSample = [](const WString& name)
+		{
+			List<WString> moduleCodes;
+			moduleCodes.Add(LoadSample(L"Codegen", name));
+			List<glr::ParsingError> errors;
+			auto assembly = Compile(GetWorkflowParser(), WfCpuArchitecture::AsExecutable, moduleCodes, errors);
+			TEST_ASSERT(assembly && errors.Count() == 0);
+			return Ptr(new WfRuntimeGlobalContext(assembly));
+		};
 
 	TEST_CASE(L"Test debugger: no break point")
 	{
@@ -858,6 +868,51 @@ TEST_FILE
 		{
 			TEST_ASSERT(ex.Message() == L"Internal error: Debugger stopped the program.");
 		}
+		ResetDebuggerForCurrentThread();
+	});
+
+	TEST_CASE(L"Test debugger: caught exception keeps info but resumes execution")
+	{
+		auto AssertCaughtTryCatchException = [](Ptr<WfRuntimeExceptionInfo> info)
+		{
+			TEST_ASSERT(info);
+			TEST_ASSERT(info->GetMessage() == L"Test1::catch");
+			TEST_ASSERT(info->GetFatal() == false);
+			TEST_ASSERT(info->callStack.Count() > 0);
+		};
+
+		auto debugger = Ptr(new MultithreadDebugger(
+			[&](MultithreadDebugger* debugger)
+			{
+				debugger->BeginExecution(false);
+				debugger->SetBreakException(true);
+				debugger->BeginExecution(false);
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::PauseByOperation);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->status == WfRuntimeExecutionStatus::RaisedException);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->exceptionInfo);
+				AssertCaughtTryCatchException(debugger->GetCurrentThreadContext()->exceptionInfo);
+
+				TEST_ASSERT(debugger->StepOver());
+				debugger->Continue();
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::PauseByOperation);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->status == WfRuntimeExecutionStatus::Executing);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->exceptionInfo);
+				AssertCaughtTryCatchException(debugger->GetCurrentThreadContext()->exceptionInfo);
+				debugger->SetBreakException(false);
+				TEST_ASSERT(debugger->Run());
+				debugger->Continue();
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::Stopped);
+			}));
+		SetDebuggerForCurrentThread(debugger);
+
+		auto context = CreateThreadContextFromCodegenSample(L"TryCatch");
+
+		LoadFunction<void()>(context, L"<initialize>")();
+		auto result = LoadFunction<WString()>(context, L"main")();
+		TEST_ASSERT(result == L"[Test1::catch][Test2::catch][Test2::finally][Test3::catch1][Test3::finally1][Test3::catch2][Test3::finally2][Test4::finally1][Test4::finally2]");
 		ResetDebuggerForCurrentThread();
 	});
 }

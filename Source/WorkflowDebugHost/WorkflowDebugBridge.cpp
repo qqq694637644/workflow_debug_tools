@@ -488,7 +488,14 @@ namespace vl
 					auto body = CreateObject();
 					auto threadId = ResolveThreadId(envelope, state);
 					auto frameId = ResolveFrameId(envelope, state);
+					vint variablesReference = 0;
 					auto kind = ResolveScopeKind(envelope, state);
+
+					auto bodyObject = ParseJsonObject(envelope.body);
+					if (bodyObject)
+					{
+						TryReadNumberField(bodyObject.Obj(), L"variablesReference", variablesReference);
+					}
 
 					collections::List<WorkflowDebugVariable> variables;
 					if (valueInspector)
@@ -504,6 +511,8 @@ namespace vl
 
 					AddField(body.Obj(), L"threadId", CreateNumber(threadId));
 					AddField(body.Obj(), L"frameId", CreateNumber(frameId));
+					// 适配器需要把响应里的远程句柄映射回本地句柄，否则后续变量展开会丢失父节点关系。
+					AddField(body.Obj(), L"variablesReference", CreateNumber(variablesReference));
 					AddField(body.Obj(), L"scopeKind", CreateString(ScopeKindToText(kind)));
 					AddField(body.Obj(), L"variables", array);
 					return body;

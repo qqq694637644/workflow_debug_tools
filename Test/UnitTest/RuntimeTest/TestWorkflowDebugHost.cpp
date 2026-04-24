@@ -779,13 +779,14 @@ TEST_FILE
 		WorkflowDebugEnvelope variables = stackTrace;
 		variables.command = L"variables";
 		variables.seq = 12;
-		variables.body = L"{\"frameId\":1,\"scopeKind\":\"Local\"}";
+		variables.body = L"{\"variablesReference\":1,\"frameId\":1,\"scopeKind\":\"Local\"}";
 		TEST_ASSERT(session.Dispatch(variables) == true);
 
 		WorkflowDebugEnvelope variablesResponse;
 		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(variablesResponse) == true);
 		TEST_ASSERT(variablesResponse.kind == WorkflowDebugEnvelopeKind::Response);
 		TEST_ASSERT(variablesResponse.replyTo == 12);
+		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"variablesReference\":1"));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"variables\""));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"localValue\""));
 		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"42\""));

@@ -140,6 +140,17 @@ namespace vl
 					return state == runtime::WfDebugger::PauseByOperation
 						|| state == runtime::WfDebugger::PauseByBreakPoint;
 				}
+
+				static bool ShouldReportException(const runtime::WfRuntimeThreadContext* context)
+				{
+					// 运行时会把已捕获的异常对象继续留在 exceptionInfo 里，供 catch 体和 raise; 重用。
+					// 因此这里不能只看 exceptionInfo，否则异常被捕获后，每一次单步暂停都会被误报成新的异常。
+					return context
+						&& (
+							context->status == runtime::WfRuntimeExecutionStatus::RaisedException
+							|| context->status == runtime::WfRuntimeExecutionStatus::FatalError
+						);
+				}
 			}
 
 			RemoteWfDebugger::RemoteWfDebugger()
@@ -469,6 +480,8 @@ namespace vl
 					stackInspector->CaptureStack(threadId, frames);
 				}
 
+				auto reportException = ShouldReportException(context);
+
 				if (state)
 				{
 					state->SetPhase(WorkflowDebugSessionPhase::Paused);
@@ -483,7 +496,7 @@ namespace vl
 					}
 
 					WString reason = L"pause";
-					if (context->exceptionInfo)
+					if (reportException)
 					{
 						reason = L"exception";
 					}
@@ -502,7 +515,7 @@ namespace vl
 
 				if (bridge)
 				{
-					if (context->exceptionInfo)
+					if (reportException)
 					{
 						bridge->NotifyException(context->exceptionInfo->message, context->exceptionInfo->fatal);
 					}
