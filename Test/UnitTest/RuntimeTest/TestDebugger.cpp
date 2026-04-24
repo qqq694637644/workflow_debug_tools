@@ -923,4 +923,37 @@ TEST_FILE
 		TEST_ASSERT(result == L"[Test1::catch][Test2::catch][Test2::finally][Test3::catch1][Test3::finally1][Test3::catch2][Test3::finally2][Test4::finally1][Test4::finally2]");
 		ResetDebuggerForCurrentThread();
 	});
+
+	TEST_CASE(L"Test debugger: duplicated variable names are preserved in call stack dictionaries")
+	{
+		class TestCallStackInfo : public WfRuntimeCallStackInfo
+		{
+		public:
+			using WfRuntimeCallStackInfo::GetVariables;
+		};
+
+		TestCallStackInfo callStackInfo;
+		List<WString> names;
+		names.Add(L"ex");
+		names.Add(L"ex");
+		names.Add(L"ex");
+
+		auto context = Ptr(new WfRuntimeVariableContext);
+		context->variables.Resize(names.Count());
+		context->variables[0] = BoxValue(WString(L"first"));
+		context->variables[1] = BoxValue(WString(L"second"));
+		context->variables[2] = BoxValue(WString(L"third"));
+
+		Ptr<IValueReadonlyDictionary> cache;
+		auto dictionary = callStackInfo.GetVariables(names, context, cache);
+		TEST_ASSERT(dictionary);
+		TEST_ASSERT(dictionary->GetCount() == 3);
+		TEST_ASSERT(UnboxValue<WString>(dictionary->GetKeys()->Get(0)) == L"ex");
+		TEST_ASSERT(UnboxValue<WString>(dictionary->GetKeys()->Get(1)) == L"ex");
+		TEST_ASSERT(UnboxValue<WString>(dictionary->GetKeys()->Get(2)) == L"ex");
+		TEST_ASSERT(UnboxValue<WString>(dictionary->GetValues()->Get(0)) == L"first");
+		TEST_ASSERT(UnboxValue<WString>(dictionary->GetValues()->Get(1)) == L"second");
+		TEST_ASSERT(UnboxValue<WString>(dictionary->GetValues()->Get(2)) == L"third");
+		TEST_ASSERT(UnboxValue<WString>(dictionary->Get(BoxValue(WString(L"ex")))) == L"first");
+	});
 }

@@ -11,8 +11,73 @@ namespace vl
 
 	namespace workflow
 	{
-		namespace runtime
-		{
+			namespace runtime
+			{
+
+				namespace
+				{
+					// Workflow 的调试变量名可能来自编译器生成槽位，也可能来自源码里合法的同名阴影变量。
+					// 这里不能强行塞进唯一键 Dictionary，否则调试器在抓暂停现场时会直接崩溃。
+					class DuplicateValueReadonlyDictionary : public Object, public IValueReadonlyDictionary
+					{
+					protected:
+						collections::List<Pair<Value, Value>>		items;
+						Ptr<IValueReadonlyList>					cachedKeys;
+						Ptr<IValueReadonlyList>					cachedValues;
+
+					public:
+						DuplicateValueReadonlyDictionary(collections::List<Pair<Value, Value>>&& _items)
+							:items(std::move(_items))
+						{
+						}
+
+						Ptr<IValueReadonlyList> GetKeys()override
+						{
+							if (!cachedKeys)
+							{
+								cachedKeys = IValueList::Create(From(items).Select([](const Pair<Value, Value>& item)
+								{
+									return item.key;
+								}));
+							}
+							return cachedKeys;
+						}
+
+						Ptr<IValueReadonlyList> GetValues()override
+						{
+							if (!cachedValues)
+							{
+								cachedValues = IValueList::Create(From(items).Select([](const Pair<Value, Value>& item)
+								{
+									return item.value;
+								}));
+							}
+							return cachedValues;
+						}
+
+						vint GetCount()override
+						{
+							return items.Count();
+						}
+
+						Value Get(const Value& key)override
+						{
+							for (vint i = 0; i < items.Count(); i++)
+							{
+								if (items[i].key == key)
+								{
+									return items[i].value;
+								}
+							}
+							CHECK_FAIL(L"vl::workflow::runtime::DuplicateValueReadonlyDictionary::Get(const Value&)#Key does not exist.");
+						}
+
+						const Object* GetCollectionObject()override
+						{
+							return nullptr;
+						}
+					};
+				}
 
 /***********************************************************************
 WfRuntimeGlobalContext
@@ -47,18 +112,12 @@ WfRuntimeCallStackInfo
 				{
 					if (context)
 					{
-						Dictionary<WString, Value> map;
+						collections::List<Pair<Value, Value>> items;
 						for (vint i = 0; i < names.Count(); i++)
 						{
-							map.Add(names[i], context->variables[i]);
+							items.Add(Pair<Value, Value>(BoxValue(names[i]), context->variables[i]));
 						}
-						cache = IValueDictionary::Create(
-							From(map)
-								.Select([](Pair<WString, Value> pair)
-								{
-									return Pair<Value, Value>(BoxValue(pair.key), pair.value);
-								})
-							);
+						cache = Ptr(new DuplicateValueReadonlyDictionary(std::move(items)));
 					}
 					else
 					{

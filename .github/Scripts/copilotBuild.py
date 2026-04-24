@@ -165,10 +165,17 @@ def sync_output(solution_root: Path, project_name: str, configuration: str, plat
 	if not source_exe.exists():
 		raise FileNotFoundError(f"找不到构建产物: {source_exe}")
 
-	target_dir.mkdir(parents=True, exist_ok=True)
-	shutil.copy2(source_exe, target_dir / source_exe.name)
-	if source_pdb.exists():
-		shutil.copy2(source_pdb, target_dir / source_pdb.name)
+	target_dirs = [solution_root / platform / configuration]
+	if platform == "Win32":
+		# 兼容 copilotExecute.ps1 的固定映射，它会从 Test\UnitTest\Debug\RuntimeTest.exe 读取 Win32 产物。
+		# 同时保留 Win32\Debug，方便直接检查平台专用输出。
+		target_dirs.append(solution_root / configuration)
+
+	for target_dir in target_dirs:
+		target_dir.mkdir(parents=True, exist_ok=True)
+		shutil.copy2(source_exe, target_dir / source_exe.name)
+		if source_pdb.exists():
+			shutil.copy2(source_pdb, target_dir / source_pdb.name)
 
 
 def parse_args() -> argparse.Namespace:
