@@ -376,6 +376,16 @@ export class WorkflowDebugDapServer {
     const request = this.adapter.createStackTrace(args.threadId, args.startFrame ?? 0, args.levels ?? 20);
     const response = await this.sendHostRequest(request);
     const state = this.adapter.receiveStackTrace(response);
+    for (const frame of state.frames) {
+      const displayPath = this.adapter.getSourceCatalog().resolveDisplayPath(frame.sourcePath);
+      if (frame.sourcePath.startsWith('unknown://source/') || displayPath.startsWith('unknown://source/')) {
+        this.log(
+          `stackTrace 未解析帧：threadId=${frame.threadId}，frameId=${frame.frameId}，` +
+          `callStackIndex=${frame.callStackIndex}，sourcePath=${frame.sourcePath}，` +
+          `displayPath=${displayPath}，line=${frame.line}，column=${frame.column}。`
+        );
+      }
+    }
     const stackFrames = state.frames.map((frame) => this.toDapStackFrame(frame));
     this.sendResponse(message, {
       stackFrames,
@@ -422,14 +432,22 @@ export class WorkflowDebugDapServer {
 
   private async handleDisconnectRequest(message: DapRequestMessage): Promise<void> {
     this.log('收到 disconnect。');
+    const sessionAlreadyClosed = this.adapter.snapshot().phase === 'closed';
     this.gracefulClose = true;
     this.terminated = true;
     const restart = this.parseBooleanArgument(message.arguments, 'restart', false);
-    await this.requestHostDisconnect(restart ? 'restart' : 'disconnect', restart);
+    if (!sessionAlreadyClosed) {
+      await this.requestHostDisconnect(restart ? 'restart' : 'disconnect', restart);
+    }
+    else {
+      this.log('宿主已经关闭调试会话，跳过反向下发 disconnect。');
+    }
     this.sendResponse(message, {});
-    this.sendEvent('terminated', {
-      restart
-    });
+    if (!sessionAlreadyClosed) {
+      this.sendEvent('terminated', {
+        restart
+      });
+    }
     this.cancelReadyWait();
     void this.disposeTransport();
   }
@@ -681,15 +699,15 @@ export class WorkflowDebugDapServer {
     readonly canRequestVariables: boolean;
   }): DapStackFrame {
     const id = this.getStackFrameId(frame.threadId, frame.frameId);
+    const displayPath = this.adapter.getSourceCatalog().resolveDisplayPath(frame.sourcePath);
     return {
       id,
       name: frame.name,
       source: {
-        path: this.adapter.getSourceCatalog().resolveDisplayPath(frame.sourcePath),
+        path: displayPath,
         name: getFileName(frame.sourcePath)
       },
       line: frame.line,
-      column: frame.column + 1,
       presentationHint: 'normal'
     };
   }

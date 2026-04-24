@@ -921,6 +921,25 @@ TEST_FILE
 		session.Detach();
 	});
 
+	TEST_CASE(L"WorkflowDebugBridge 输出事件")
+	{
+		WorkflowDebugSession session(L"wf-output");
+		session.Attach();
+
+		TEST_ASSERT(session.GetBridge()->NotifyOutput(L"warn", L"当前暂停位置无法映射到源码") == true);
+
+		WorkflowDebugEnvelope output;
+		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(output) == true);
+		TEST_ASSERT(output.kind == WorkflowDebugEnvelopeKind::Event);
+		TEST_ASSERT(output.command == L"output");
+		TEST_ASSERT(output.replyTo == -1);
+		TEST_ASSERT(output.sessionId == L"wf-output");
+		TEST_ASSERT(ContainsSubstring(output.body, L"\"level\":\"warn\""));
+		TEST_ASSERT(ContainsSubstring(output.body, L"\"message\":\"当前暂停位置无法映射到源码\""));
+
+		session.Detach();
+	});
+
 	TEST_CASE(L"RemoteWfDebugger 暂停恢复")
 	{
 		TestRemoteWfDebugger debugger;

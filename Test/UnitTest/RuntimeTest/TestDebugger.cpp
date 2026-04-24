@@ -900,6 +900,14 @@ TEST_FILE
 				TEST_ASSERT(debugger->GetCurrentThreadContext()->status == WfRuntimeExecutionStatus::Executing);
 				TEST_ASSERT(debugger->GetCurrentThreadContext()->exceptionInfo);
 				AssertCaughtTryCatchException(debugger->GetCurrentThreadContext()->exceptionInfo);
+				{
+					auto currentContext = debugger->GetCurrentThreadContext();
+					auto currentFrame = currentContext->stackFrames.Count() - 1;
+					auto beforePosition = debugger->GetCurrentPosition(true, currentContext, currentFrame);
+					auto afterPosition = debugger->GetCurrentPosition(false, currentContext, currentFrame);
+					TEST_ASSERT(beforePosition.codeIndex >= 0 || afterPosition.codeIndex >= 0);
+					TEST_ASSERT(beforePosition.start.row >= 0 || afterPosition.start.row >= 0);
+				}
 				debugger->SetBreakException(false);
 				TEST_ASSERT(debugger->Run());
 				debugger->Continue();

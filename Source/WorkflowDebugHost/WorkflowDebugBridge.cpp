@@ -647,6 +647,14 @@ namespace vl
 					return body;
 				}
 
+				static Ptr<JsonNode> BuildOutputBody(const WString& level, const WString& message)
+				{
+					auto body = CreateObject();
+					AddField(body.Obj(), L"level", CreateString(level.Length() > 0 ? level : L"info"));
+					AddField(body.Obj(), L"message", CreateString(message));
+					return body;
+				}
+
 				static Ptr<JsonObject> BuildCapabilitiesBody()
 				{
 					auto body = CreateObject();
@@ -1031,6 +1039,11 @@ namespace vl
 			bool WorkflowDebugBridge::NotifyStopped()
 			{
 				return SendEvent(state, transport, L"stopped", BuildStoppedBody(state));
+			}
+
+			bool WorkflowDebugBridge::NotifyOutput(const WString& level, const WString& message)
+			{
+				return SendEvent(state, transport, L"output", BuildOutputBody(level, message));
 			}
 
 			bool WorkflowDebugBridge::NotifyDisconnect(const WString& reason, bool restart)

@@ -52,6 +52,7 @@ namespace vl
 				bool								Dispatch(const WorkflowDebugEnvelope& envelope);
 				bool								NotifyHello(const WString& runtimeVersion, const collections::List<WorkflowDebugSourceRecord>& sourceMap);
 				bool								NotifyReady(const WString& runtimeVersion);
+				bool								NotifyOutput(const WString& level, const WString& message);
 				bool								NotifyDisconnect(const WString& reason, bool restart = false);
 				bool								NotifyStopped();
 				bool								NotifyException(const WString& message, bool fatal);

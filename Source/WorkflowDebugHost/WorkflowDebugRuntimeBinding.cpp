@@ -151,6 +151,86 @@ namespace vl
 							|| context->status == runtime::WfRuntimeExecutionStatus::FatalError
 						);
 				}
+
+				static bool TryBuildStackFrameFromPosition(
+					WorkflowDebugStackFrame& frame,
+					const glr::ParsingTextRange& range,
+					WorkflowDebugSourceCatalog* sourceCatalog
+				)
+				{
+					frame.sourceId = range.codeIndex;
+					frame.row = range.start.row;
+					frame.column = range.start.column;
+
+					if (sourceCatalog)
+					{
+						if (frame.sourceId >= 0)
+						{
+							vint resolvedRow = 0;
+							if (sourceCatalog->ResolveByCodeIndex(frame.sourceId, frame.sourcePath, resolvedRow))
+							{
+								if (frame.row < 0)
+								{
+									frame.row = resolvedRow;
+								}
+								if (frame.row < 0)
+								{
+									frame.row = 0;
+								}
+								if (frame.column < 0)
+								{
+									frame.column = 0;
+								}
+								return true;
+							}
+						}
+
+						if (frame.sourcePath.Length() >= 17 && frame.sourcePath.Left(17) != L"unknown://source/")
+						{
+							vint resolvedSourceId = -1;
+							vint resolvedRow = 0;
+							if (sourceCatalog->ResolveByPath(frame.sourcePath, resolvedSourceId, resolvedRow))
+							{
+								if (frame.sourceId < 0)
+								{
+									frame.sourceId = resolvedSourceId;
+								}
+								if (frame.row < 0)
+								{
+									frame.row = resolvedRow;
+								}
+								if (frame.row < 0)
+								{
+									frame.row = 0;
+								}
+								if (frame.column < 0)
+								{
+									frame.column = 0;
+								}
+								return true;
+							}
+						}
+					}
+
+					frame.sourcePath = BuildUnknownSourcePath(frame.frameId);
+					if (frame.row < 0)
+					{
+						frame.row = 0;
+					}
+					if (frame.column < 0)
+					{
+						frame.column = 0;
+					}
+					return false;
+				}
+
+				static WString DescribePosition(const glr::ParsingTextRange& range)
+				{
+					return L"(codeIndex=" + itow(range.codeIndex)
+						+ L", row=" + itow(range.start.row)
+						+ L", column=" + itow(range.start.column)
+						+ L")";
+				}
 			}
 
 			RemoteWfDebugger::RemoteWfDebugger()
@@ -429,6 +509,12 @@ namespace vl
 				}
 
 				collections::List<WorkflowDebugStackFrame> frames;
+				bool topFrameResolved = true;
+				bool topFrameAfterResolved = false;
+				glr::ParsingTextRange topBeforeRange;
+				glr::ParsingTextRange topAfterRange;
+				WString topFunctionName;
+				vint topFrameId = -1;
 				for (vint frameId = 0; frameId < context->stackFrames.Count(); frameId++)
 				{
 					const auto& stackFrame = context->stackFrames[frameId];
@@ -437,28 +523,26 @@ namespace vl
 					frame.frameId = frameId;
 					frame.functionName = context->globalContext->assembly->functions[stackFrame.functionIndex]->name;
 
-					auto range = debuggerObject->GetCurrentPosition(true, context, frameId);
-					frame.sourceId = range.codeIndex;
-					frame.row = range.start.row;
-					if (frame.row < 0)
+					auto beforeRange = debuggerObject->GetCurrentPosition(true, context, frameId);
+					auto resolved = TryBuildStackFrameFromPosition(frame, beforeRange, sourceCatalog);
+					auto afterRange = beforeRange;
+					auto afterResolved = false;
+					if (!resolved)
 					{
-						// 某些运行时内部位置没有可回放的源码行号时，统一收敛到第 0 行，
-						// 这样后续序列化出来的 line / row 关系仍然保持一致。
-						frame.row = 0;
+						afterRange = debuggerObject->GetCurrentPosition(false, context, frameId);
+						auto alternate = frame;
+						afterResolved = TryBuildStackFrameFromPosition(alternate, afterRange, sourceCatalog);
+						// 这里不把 afterCodegen 当作回退，只记录诊断信息，避免隐藏当前位置映射问题。
 					}
-					frame.column = range.start.column;
 
-					if (sourceCatalog && frame.sourceId >= 0)
+					if (frameId == context->stackFrames.Count() - 1)
 					{
-						vint resolvedRow = 0;
-						if (!sourceCatalog->ResolveByCodeIndex(frame.sourceId, frame.sourcePath, resolvedRow))
-						{
-							frame.sourcePath = BuildUnknownSourcePath(frame.frameId);
-						}
-					}
-					else if (frame.sourcePath.Length() == 0)
-					{
-						frame.sourcePath = BuildUnknownSourcePath(frame.frameId);
+						topFrameResolved = resolved;
+						topFrameAfterResolved = afterResolved;
+						topBeforeRange = beforeRange;
+						topAfterRange = afterRange;
+						topFunctionName = frame.functionName;
+						topFrameId = frameId;
 					}
 
 					frames.Add(frame);
@@ -504,6 +588,10 @@ namespace vl
 					{
 						reason = L"breakpoint";
 					}
+					else if (debuggerObject->GetRunningType() != runtime::WfDebugger::RunUntilBreakPoint)
+					{
+						reason = L"step";
+					}
 					else if (stopOnEntryPending)
 					{
 						reason = L"entry";
@@ -515,6 +603,19 @@ namespace vl
 
 				if (bridge)
 				{
+					if (!topFrameResolved && topFrameId >= 0)
+					{
+						WString message = L"当前暂停位置无法映射到源码：threadId=" + itow(threadId)
+							+ L"，frameId=" + itow(topFrameId)
+							+ L"，function=" + topFunctionName
+							+ L"，beforeCodegen=" + (topFrameResolved ? L"成功" : L"失败")
+							+ L"，afterCodegen=" + (topFrameAfterResolved ? L"成功" : L"失败")
+							+ L"，before=" + DescribePosition(topBeforeRange)
+							+ L"，after=" + DescribePosition(topAfterRange)
+							+ L"。";
+						bridge->NotifyOutput(L"warn", message);
+					}
+
 					if (reportException)
 					{
 						bridge->NotifyException(context->exceptionInfo->message, context->exceptionInfo->fatal);

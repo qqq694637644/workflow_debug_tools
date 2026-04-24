@@ -22,8 +22,9 @@ namespace vl
 	{
 		namespace debughost
 		{
-			class WorkflowDebugSessionState;
+			struct WorkflowDebugStackFrame;
 			class WorkflowDebugSourceCatalog;
+			class WorkflowDebugSessionState;
 			class WorkflowDebugBreakpointRegistry;
 			class WorkflowDebugStackInspector;
 			class WorkflowDebugValueInspector;

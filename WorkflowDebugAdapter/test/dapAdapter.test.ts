@@ -20,6 +20,7 @@ import {
   type DapResponseMessage,
   writeDapMessage
 } from '../src/dapProtocol.js';
+import { createEventEnvelope } from '../src/protocol.js';
 
 const remotePath = 'D:/repos/Workflow-master/Test/Resources/Debugger/RaiseException.txt';
 const localPath = 'C:/workspace/Workflow-master/Test/Resources/Debugger/RaiseException.txt';
@@ -391,6 +392,7 @@ async function startFakeHost(port: number): Promise<{
   readonly transport: BridgeTransport<ProtocolEnvelope>;
   readonly runtimeControl: RecordingRuntimeControl;
   readonly disconnectRequests: Array<{ readonly reason: string; readonly restart: boolean }>;
+  notifyDisconnect(reason?: string, restart?: boolean): Promise<void>;
   close(): Promise<void>;
 }> {
   const runtimeControl = new RecordingRuntimeControl();
@@ -523,12 +525,19 @@ async function startFakeHost(port: number): Promise<{
   });
 
   await transport.connect();
-  await transport.send(target.createHello());
+  const hello = target.createHello();
+  await transport.send(hello);
 
   return {
     transport,
     runtimeControl,
     disconnectRequests,
+    async notifyDisconnect(reason = '会话关闭', restart = false): Promise<void> {
+      await transport.send(createEventEnvelope(hello.sessionId, 'disconnect', {
+        reason,
+        restart
+      }, Date.now()));
+    },
     async close(): Promise<void> {
       await transport.close();
     }
@@ -614,10 +623,11 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       });
       assert.equal(stackTraceResponse.success, true);
       const stackTraceBody = stackTraceResponse.body as {
-        readonly stackFrames: Array<{ readonly id: number; readonly name: string; readonly source?: { readonly path?: string } }>;
+        readonly stackFrames: Array<{ readonly id: number; readonly name: string; readonly source?: { readonly path?: string }; readonly column?: number }>;
       };
       assert.equal(stackTraceBody.stackFrames[0].name, 'RaiseException');
       assert.equal(stackTraceBody.stackFrames[0].source?.path, normalizedLocalPath);
+      assert.equal(stackTraceBody.stackFrames[0].column, undefined);
 
       const scopesResponse = await client.request('scopes', {
         frameId: stackTraceBody.stackFrames[0].id
@@ -688,8 +698,58 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
   }
 }
 
+async function verifyDisconnectAfterHostClosedIsIdempotent(): Promise<void> {
+  const port = await reservePort();
+  const scriptPath = fileURLToPath(new URL('../src/dapMain.js', import.meta.url));
+  const client = new DapClient(scriptPath);
+
+  try {
+    const initializeResponse = await client.request('initialize', {
+      adapterID: 'workflow'
+    });
+    assert.equal(initializeResponse.success, true);
+
+    const attachResponse = await client.request('attach', {
+      host: '127.0.0.1',
+      port,
+      workspaceRoot: 'C:/workspace/Workflow-master',
+      pathMapping: [
+        {
+          localPath,
+          remotePath
+        }
+      ],
+      connectTimeoutMs: 10000,
+      stopOnEntry: true
+    });
+    assert.equal(attachResponse.success, true);
+
+    const host = await startFakeHost(port);
+    try {
+      await client.waitForEvent('initialized');
+      await host.notifyDisconnect('会话关闭', false);
+
+      const terminated = await client.waitForEvent('terminated');
+      assert.equal((terminated.body as { readonly restart?: boolean } | undefined)?.restart, false);
+
+      const disconnectResponse = await client.request('disconnect', {
+        restart: false
+      });
+      assert.equal(disconnectResponse.success, true);
+      assert.deepEqual(host.disconnectRequests, []);
+    }
+    finally {
+      await host.close();
+    }
+  }
+  finally {
+    await client.close();
+  }
+}
+
 async function main(): Promise<void> {
   await verifyWorkflowDebugAdapterPluginFlow();
+  await verifyDisconnectAfterHostClosedIsIdempotent();
   console.log('WorkflowDebugAdapter VSCode 插件附加与单步检查通过。');
 }
 
