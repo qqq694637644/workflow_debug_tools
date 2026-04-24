@@ -15,6 +15,8 @@ Workflow::DebugHost
 #include "WorkflowDebugStackInspector.h"
 #include "WorkflowDebugTransport.h"
 #include "WorkflowDebugValueInspector.h"
+#include <chrono>
+#include <thread>
 
 #ifdef VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
 
@@ -72,6 +74,41 @@ namespace vl
 				if (transport->GetEndpointPort() > 0)
 				{
 					CHECK_ERROR(transport->Connect(), L"无法连接到调试适配器。");
+					dispatchLoopRunning = true;
+					dispatchThread = std::thread([this]()
+					{
+						WorkflowDebugEnvelope envelope;
+						while (dispatchLoopRunning)
+						{
+							bool received = false;
+							while (transport && transport->TryReceive(envelope))
+							{
+								received = true;
+								Dispatch(envelope);
+								if (!dispatchLoopRunning)
+								{
+									break;
+								}
+							}
+
+							if (!dispatchLoopRunning)
+							{
+								break;
+							}
+
+							if (!transport || !transport->IsOpen())
+							{
+								break;
+							}
+
+							if (!received)
+							{
+								std::this_thread::sleep_for(std::chrono::milliseconds(1));
+							}
+						}
+
+						dispatchLoopRunning = false;
+					});
 				}
 				else
 				{
@@ -81,9 +118,14 @@ namespace vl
 
 			void WorkflowDebugSession::Detach()
 			{
+				dispatchLoopRunning = false;
 				runtimeBinding->Unbind();
 				runtimeBinding->AttachDebugData(nullptr, nullptr, nullptr, nullptr, nullptr);
 				transport->Close();
+				if (dispatchThread.joinable())
+				{
+					dispatchThread.join();
+				}
 				if (state)
 				{
 					state->Detach();
@@ -97,6 +139,72 @@ namespace vl
 			bool WorkflowDebugSession::Dispatch(const WorkflowDebugEnvelope& envelope)
 			{
 				return bridge ? bridge->Dispatch(envelope) : false;
+			}
+
+			void WorkflowDebugSession::SetSourceMap(const collections::List<WorkflowDebugSourceRecord>& value)
+			{
+				sourceMap.Clear();
+				for (auto source : value)
+				{
+					sourceMap.Add(source);
+				}
+			}
+
+			bool WorkflowDebugSession::SendHello()
+			{
+				if (!bridge || !transport || !transport->IsOpen())
+				{
+					return false;
+				}
+
+				sourceCatalog->Clear();
+				for (auto source : sourceMap)
+				{
+					sourceCatalog->RegisterSource(source.codeIndex, source.sourcePath, source.row);
+				}
+				if (state)
+				{
+					state->SetSourceMapCount(sourceMap.Count());
+				}
+
+				return bridge->NotifyHello(runtimeVersion, sourceMap);
+			}
+
+			bool WorkflowDebugSession::WaitForReady(vint timeoutMilliseconds)
+			{
+				if (!state)
+				{
+					return false;
+				}
+
+				auto begin = std::chrono::steady_clock::now();
+				while (true)
+				{
+					auto phase = state->GetPhase();
+					if (phase == WorkflowDebugSessionPhase::Ready)
+					{
+						return true;
+					}
+					if (phase == WorkflowDebugSessionPhase::Closed)
+					{
+						return false;
+					}
+					if (transport && !transport->IsOpen())
+					{
+						return false;
+					}
+
+					if (timeoutMilliseconds > 0)
+					{
+						auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count();
+						if (elapsed >= timeoutMilliseconds)
+						{
+							return false;
+						}
+					}
+
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				}
 			}
 
 			WorkflowDebugSessionState* WorkflowDebugSession::GetState() const

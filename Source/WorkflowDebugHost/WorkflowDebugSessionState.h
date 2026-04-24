@@ -10,6 +10,7 @@ Workflow::DebugHost
 #define VCZH_WORKFLOW_DEBUGHOST_WORKFLOWDEBUGSESSIONSTATE
 
 #include "WorkflowDebugProtocol.h"
+#include <mutex>
 
 #ifdef VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
 
@@ -87,6 +88,7 @@ namespace vl
 				WorkflowDebugSessionSnapshot		Snapshot() const;
 
 			private:
+				mutable std::mutex				mutex;
 				WString								sessionId;
 				WorkflowDebugSessionPhase			phase = WorkflowDebugSessionPhase::Idle;
 				WString								workspaceRoot;

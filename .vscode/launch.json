@@ -2,14 +2,24 @@
   "version": "0.2.0",
   "configurations": [
     {
-    "name": "Workflow",
-    "type": "workflow",
-    "request": "attach",
-    "host": "127.0.0.1",
-    "port": 4711,
-    "workspaceRoot": "${workspaceFolder}",
-    "connectTimeoutMs": 0,
-    "pathMapping": []
+      "name": "Workflow",
+      "type": "workflow",
+      "request": "attach",
+      "host": "127.0.0.1",
+      "port": 4711,
+      "workspaceRoot": "${workspaceFolder}",
+      "connectTimeoutMs": 0,
+      "pathMapping": []
+    },
+    {
+      "name": "Workflow mytest",
+      "type": "workflow",
+      "request": "attach",
+      "host": "127.0.0.1",
+      "port": 4711,
+      "workspaceRoot": "${workspaceFolder}\\Test\\UnitTest\\mytest",
+      "connectTimeoutMs": 0,
+      "pathMapping": []
     }
   ]
 }

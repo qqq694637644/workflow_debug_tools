@@ -10,6 +10,7 @@ Workflow::DebugHost
 #define VCZH_WORKFLOW_DEBUGHOST_WORKFLOWDEBUGBRIDGE
 
 #include "WorkflowDebugProtocol.h"
+#include "WorkflowDebugSourceCatalog.h"
 
 #ifdef VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
 
@@ -49,6 +50,8 @@ namespace vl
 				void								Unbind();
 
 				bool								Dispatch(const WorkflowDebugEnvelope& envelope);
+				bool								NotifyHello(const WString& runtimeVersion, const collections::List<WorkflowDebugSourceRecord>& sourceMap);
+				bool								NotifyReady(const WString& runtimeVersion);
 				bool								NotifyStopped();
 				bool								NotifyException(const WString& message, bool fatal);
 

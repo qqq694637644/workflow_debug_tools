@@ -214,6 +214,46 @@ async function reservePort(): Promise<number> {
   return port;
 }
 
+async function assertPortBindable(port: number): Promise<void> {
+  const server = net.createServer();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(port, '127.0.0.1', resolve);
+    });
+  }
+  finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+}
+
+async function waitForPortBindable(port: number, timeoutMs = 5000): Promise<void> {
+  const start = Date.now();
+  let lastError: unknown = null;
+  while (Date.now() - start <= timeoutMs) {
+    try {
+      await assertPortBindable(port);
+      return;
+    }
+    catch (error) {
+      lastError = error;
+      await delay(20);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`等待端口 ${port} 释放超时。`);
+}
+
 class DapClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly reader = new DapMessageReader();
@@ -614,6 +654,11 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
     }
     finally {
       await host.close();
+      await waitForCondition(
+        () => client.getReceivedMessages().some((message) => message.type === 'event' && message.event === 'terminated'),
+        '等待 terminated 事件超时。'
+      );
+      await waitForPortBindable(port);
     }
   }
   finally {

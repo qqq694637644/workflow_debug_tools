@@ -587,6 +587,45 @@ namespace vl
 					AddField(body.Obj(), L"callStack", array);
 					return body;
 				}
+
+				static Ptr<JsonObject> BuildCapabilitiesBody()
+				{
+					auto body = CreateObject();
+					AddField(body.Obj(), L"supportsRemoteAttach", CreateLiteral(true));
+					AddField(body.Obj(), L"supportsBreakpoints", CreateLiteral(true));
+					AddField(body.Obj(), L"supportsContinue", CreateLiteral(true));
+					AddField(body.Obj(), L"supportsStepOver", CreateLiteral(true));
+					AddField(body.Obj(), L"supportsStepIn", CreateLiteral(true));
+					AddField(body.Obj(), L"supportsStepOut", CreateLiteral(false));
+					AddField(body.Obj(), L"supportsStackTrace", CreateLiteral(true));
+					AddField(body.Obj(), L"supportsVariables", CreateLiteral(true));
+					return body;
+				}
+
+				static Ptr<JsonArray> BuildSourceMapArray(const collections::List<WorkflowDebugSourceRecord>& sourceMap)
+				{
+					auto array = CreateArray();
+					for (auto source : sourceMap)
+					{
+						auto object = CreateObject();
+						AddField(object.Obj(), L"codeIndex", CreateNumber(source.codeIndex));
+						AddField(object.Obj(), L"sourcePath", CreateString(source.sourcePath));
+						AddField(object.Obj(), L"row", CreateNumber(source.row));
+						array->items.Add(object);
+					}
+					return array;
+				}
+
+				static Ptr<JsonNode> BuildHelloBody(const WString& runtimeVersion, const collections::List<WorkflowDebugSourceRecord>& sourceMap)
+				{
+					auto body = CreateObject();
+					AddField(body.Obj(), L"runtimeVersion", CreateString(runtimeVersion));
+					AddField(body.Obj(), L"protocolVersion", CreateNumber(1));
+					AddField(body.Obj(), L"capabilities", BuildCapabilitiesBody());
+					AddField(body.Obj(), L"sourceMap", BuildSourceMapArray(sourceMap));
+					return body;
+				}
+
 			}
 
 			WorkflowDebugBridge::WorkflowDebugBridge()
@@ -702,11 +741,21 @@ namespace vl
 
 			bool WorkflowDebugBridge::HandleInitialize(const WorkflowDebugEnvelope& envelope)
 			{
-				(void)envelope;
-				if (transport)
+				auto body = ParseJsonObject(envelope.body);
+				if (body && state)
 				{
-					transport->Open();
+					WString workspaceRoot;
+					if (TryReadStringField(body.Obj(), L"workspaceRoot", workspaceRoot))
+					{
+						state->SetWorkspaceRoot(workspaceRoot);
+					}
 				}
+
+				if (!NotifyReady(L"workflow-runtime"))
+				{
+					return false;
+				}
+
 				if (state)
 				{
 					state->SetPhase(WorkflowDebugSessionPhase::Ready);
@@ -871,6 +920,27 @@ namespace vl
 			bool WorkflowDebugBridge::NotifyStopped()
 			{
 				return SendEvent(state, transport, L"stopped", BuildStoppedBody(state));
+			}
+
+			bool WorkflowDebugBridge::NotifyHello(const WString& runtimeVersion, const collections::List<WorkflowDebugSourceRecord>& sourceMap)
+			{
+				if (state)
+				{
+					state->SetSourceMapCount(sourceMap.Count());
+					state->SetPhase(WorkflowDebugSessionPhase::Negotiating);
+				}
+				return SendEvent(state, transport, L"hello", BuildHelloBody(runtimeVersion, sourceMap));
+			}
+
+			bool WorkflowDebugBridge::NotifyReady(const WString& runtimeVersion)
+			{
+				auto body = CreateObject();
+				auto snapshot = state ? state->Snapshot() : WorkflowDebugSessionSnapshot();
+				AddField(body.Obj(), L"sessionId", CreateString(snapshot.sessionId));
+				AddField(body.Obj(), L"runtimeVersion", CreateString(runtimeVersion));
+				AddField(body.Obj(), L"accepted", CreateLiteral(true));
+				AddField(body.Obj(), L"capabilities", BuildCapabilitiesBody());
+				return SendEvent(state, transport, L"ready", body);
 			}
 
 			bool WorkflowDebugBridge::NotifyException(const WString& message, bool fatal)

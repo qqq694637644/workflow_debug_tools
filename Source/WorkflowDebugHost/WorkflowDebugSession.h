@@ -10,6 +10,9 @@ Workflow::DebugHost
 #define VCZH_WORKFLOW_DEBUGHOST_WORKFLOWDEBUGSESSION
 
 #include "WorkflowDebugProtocol.h"
+#include "WorkflowDebugSourceCatalog.h"
+#include <atomic>
+#include <thread>
 
 #ifdef VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
 
@@ -43,6 +46,9 @@ namespace vl
 				void								Attach();
 				void								Detach();
 				bool								Dispatch(const WorkflowDebugEnvelope& envelope);
+				void								SetSourceMap(const collections::List<WorkflowDebugSourceRecord>& sourceMap);
+				bool								SendHello();
+				bool								WaitForReady(vint timeoutMilliseconds);
 
 				WorkflowDebugSessionState*			GetState() const;
 				WorkflowDebugTransport*				GetTransport() const;
@@ -64,6 +70,10 @@ namespace vl
 				Ptr<WorkflowDebugRuntimeBinding>	runtimeBinding;
 				Ptr<WorkflowDebugBridge>			bridge;
 				Ptr<runtime::WfDebugger>			debugger;
+				collections::List<WorkflowDebugSourceRecord>	sourceMap;
+				std::atomic<bool>					dispatchLoopRunning = false;
+				std::thread							dispatchThread;
+				WString								runtimeVersion = L"workflow-runtime";
 			};
 		}
 	}

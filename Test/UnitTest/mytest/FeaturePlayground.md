@@ -1,7 +1,18 @@
-﻿# 脚本特性体验清单
+# 脚本特性体验清单
 
 这个文档用于在 `mytest` 项目里逐步体验 Workflow 脚本语言的特性。  
 建议的做法是：每次只把下面一段脚本放进 `mytest.cpp` 的 `moduleCodes.Add(...)` 里，编译运行一次，再换下一段。
+
+## 调试接入
+
+如果要让 VSCode 的 `workflow` 调试器附加到 `mytest`，启动 `mytest.exe` 时加上 `--workflow-debug`。
+
+- 默认会连接到 `127.0.0.1:4711`
+- 需要改地址时，可以用 `--workflow-debug-host=...`
+- 需要改端口时，可以用 `--workflow-debug-port=...`
+- 需要区分多个会话时，可以用 `--workflow-debug-session=...`
+
+这套启动参数只影响调试模式，不影响普通脚本运行。
 
 ## 1. 最小可运行脚本
 
@@ -225,4 +236,3 @@ namespace test
 7. `bind` 和观察式表达式
 
 这些特性更能体现 Workflow 不只是“语法像脚本”，而是偏工程化、偏宿主互操作的语言。
-

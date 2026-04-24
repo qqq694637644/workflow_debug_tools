@@ -520,6 +520,9 @@ TEST_FILE
 		vint port = 0;
 		auto listenSocket = CreateLoopbackListener(port);
 		std::atomic<bool> accepted = false;
+		std::atomic<bool> readyReceived = false;
+		WString helloLine;
+		WString readyLine;
 		std::thread serverThread([&]()
 		{
 			auto clientSocket = accept(listenSocket, nullptr, nullptr);
@@ -529,20 +532,57 @@ TEST_FILE
 			}
 
 			accepted = true;
-			char buffer[1];
-			while (recv(clientSocket, buffer, sizeof(buffer), 0) > 0)
+			if (!ReadUtf8Line(clientSocket, helloLine))
 			{
+				shutdown(clientSocket, SD_BOTH);
+				closesocket(clientSocket);
+				return;
 			}
+
+			WString initialize = L"{\"type\":\"request\",\"seq\":2,\"sessionId\":\"wf-connect\",\"cmd\":\"initialize\",\"body\":{\"workspaceRoot\":\"D:/workspace\"}}";
+			if (!SendUtf8Line(clientSocket, initialize))
+			{
+				shutdown(clientSocket, SD_BOTH);
+				closesocket(clientSocket);
+				return;
+			}
+
+			if (!ReadUtf8Line(clientSocket, readyLine))
+			{
+				shutdown(clientSocket, SD_BOTH);
+				closesocket(clientSocket);
+				return;
+			}
+
+			readyReceived = true;
 			shutdown(clientSocket, SD_BOTH);
 			closesocket(clientSocket);
 		});
 
 		WorkflowDebugSession session(L"wf-connect");
+		collections::List<WorkflowDebugSourceRecord> sourceMap;
+		WorkflowDebugSourceRecord source0;
+		source0.codeIndex = 0;
+		source0.sourcePath = L"D:/workspace/Scripts/HelloWorld.txt";
+		source0.row = 0;
+		sourceMap.Add(source0);
+		WorkflowDebugSourceRecord source1 = source0;
+		source1.row = 1;
+		sourceMap.Add(source1);
+		session.SetSourceMap(sourceMap);
 		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
 		session.Attach();
+		TEST_ASSERT(session.SendHello() == true);
 
 		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
-		TEST_ASSERT(session.GetTransport()->IsOpen() == true);
+		TEST_ASSERT(session.WaitForReady(2000) == true);
+		TEST_ASSERT(WaitForFlag(readyReceived, 2000) == true);
+		TEST_ASSERT(ContainsSubstring(helloLine, L"\"cmd\":\"hello\""));
+		TEST_ASSERT(ContainsSubstring(helloLine, L"\"sourceMap\""));
+		TEST_ASSERT(ContainsSubstring(helloLine, L"HelloWorld.txt"));
+		TEST_ASSERT(ContainsSubstring(helloLine, L"\"codeIndex\":0"));
+		TEST_ASSERT(ContainsSubstring(readyLine, L"\"cmd\":\"ready\""));
+		TEST_ASSERT(ContainsSubstring(readyLine, L"\"accepted\":true"));
 
 		session.Detach();
 

@@ -3,6 +3,13 @@
 #include "../../../Source/Library/WfLibraryReflection.h"
 #include "../../../Source/Emitter/WfEmitter.h"
 
+#if defined VCZH_MSVC
+#include "../../../Source/WorkflowDebugHost/WorkflowDebugHost.h"
+#include "../../../Source/WorkflowDebugHost/WorkflowDebugSession.h"
+#include "../../../Source/WorkflowDebugHost/WorkflowDebugTransport.h"
+#include <limits>
+#endif
+
 using namespace vl;
 using namespace vl::collections;
 using namespace vl::console;
@@ -16,6 +23,10 @@ using namespace vl::workflow::analyzer;
 using namespace vl::workflow::emitter;
 using namespace vl::workflow::runtime;
 
+#if defined VCZH_MSVC && defined VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
+using namespace vl::workflow::debughost;
+#endif
+
 namespace
 {
 	struct ScriptCase
@@ -24,6 +35,118 @@ namespace
 		const wchar_t* fileName;
 		const wchar_t* description;
 	};
+
+#if defined VCZH_MSVC && defined VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
+	struct DebugLaunchOptions
+	{
+		bool		enabled = false;
+		WString		host = L"127.0.0.1";
+		vint		port = 4711;
+		WString		sessionId = L"mytest";
+	};
+
+	static bool TryParseDebugPort(const WString& text, vint& port)
+	{
+		if (text.Length() == 0)
+		{
+			return false;
+		}
+
+		auto parsed = wtoi64(text);
+		if (parsed <= 0 || parsed > 65535 || parsed > (std::numeric_limits<vint>::max)())
+		{
+			return false;
+		}
+
+		port = (vint)parsed;
+		return true;
+	}
+
+	static bool TryParseDebugArgument(const WString& argument, DebugLaunchOptions& options)
+	{
+		const WString debugPrefix = L"--workflow-debug=";
+		const WString hostPrefix = L"--workflow-debug-host=";
+		const WString portPrefix = L"--workflow-debug-port=";
+		const WString sessionPrefix = L"--workflow-debug-session=";
+
+		if (argument == L"--workflow-debug")
+		{
+			options.enabled = true;
+			return true;
+		}
+
+		if (argument.Length() >= debugPrefix.Length() && argument.Left(debugPrefix.Length()) == debugPrefix)
+		{
+			auto value = argument.Right(argument.Length() - debugPrefix.Length());
+			if (value == L"0" || value == L"false" || value == L"False" || value == L"FALSE")
+			{
+				options.enabled = false;
+				return true;
+			}
+
+			options.enabled = true;
+			return true;
+		}
+
+		if (argument.Length() >= hostPrefix.Length() && argument.Left(hostPrefix.Length()) == hostPrefix)
+		{
+			options.host = argument.Right(argument.Length() - hostPrefix.Length());
+			CHECK_ERROR(options.host.Length() > 0, L"调试宿主主机不能为空。");
+			options.enabled = true;
+			return true;
+		}
+
+		if (argument.Length() >= portPrefix.Length() && argument.Left(portPrefix.Length()) == portPrefix)
+		{
+			auto value = argument.Right(argument.Length() - portPrefix.Length());
+			CHECK_ERROR(TryParseDebugPort(value, options.port), L"调试宿主端口必须是 1 到 65535 之间的正整数。");
+			options.enabled = true;
+			return true;
+		}
+
+		if (argument.Length() >= sessionPrefix.Length() && argument.Left(sessionPrefix.Length()) == sessionPrefix)
+		{
+			options.sessionId = argument.Right(argument.Length() - sessionPrefix.Length());
+			CHECK_ERROR(options.sessionId.Length() > 0, L"调试会话标识不能为空。");
+			options.enabled = true;
+			return true;
+		}
+
+		return false;
+	}
+
+	static DebugLaunchOptions ParseDebugLaunchOptions(int argc, wchar_t* argv[])
+	{
+		DebugLaunchOptions options;
+		for (vint i = 1; i < argc; i++)
+		{
+			TryParseDebugArgument(argv[i], options);
+		}
+		return options;
+	}
+
+	struct DebugSessionGuard
+	{
+		Ptr<WorkflowDebugHost>		host;
+		Ptr<WorkflowDebugSession>	session;
+
+		void Reset()
+		{
+			if (session)
+			{
+				session->Detach();
+				session = nullptr;
+			}
+			if (host)
+			{
+				host->Shutdown();
+				host = nullptr;
+			}
+		}
+	};
+
+	static WorkflowDebugSession* gWorkflowDebugSession = nullptr;
+#endif
 
 	void LoadScriptTypes()
 	{
@@ -45,26 +168,25 @@ namespace
 		candidates.Add(WString(L"..\\") + relativeFileName);
 		candidates.Add(WString(L"..\\..\\") + relativeFileName);
 		candidates.Add(WString(L"..\\..\\..\\") + relativeFileName);
+		candidates.Add(WString(L"..\\..\\mytest\\") + relativeFileName);
 
 		for (auto candidate : candidates)
 		{
 			try
 			{
-				FileStream fileStream(candidate, FileStream::ReadOnly);
-				BomDecoder decoder;
-				DecoderStream decoderStream(fileStream, decoder);
-				StreamReader reader(decoderStream);
+				if (!File(candidate).Exists())
+				{
+					continue;
+				}
 
 				WString text;
-				while (!reader.IsEnd())
+				if (File(candidate).ReadAllTextByBom(text))
 				{
-					text += reader.ReadLine();
-					if (!reader.IsEnd())
-					{
-						text += L"\r\n";
-					}
+					return text;
 				}
-				return text;
+			}
+			catch (const Error&)
+			{
 			}
 			catch (const Exception&)
 			{
@@ -75,6 +197,56 @@ namespace
 		return WString::Empty;
 	}
 
+#if defined VCZH_MSVC && defined VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
+	static WString ResolveScriptPath(const WString& relativeFileName)
+	{
+		List<WString> candidates;
+		candidates.Add(relativeFileName);
+		candidates.Add(WString(L"..\\") + relativeFileName);
+		candidates.Add(WString(L"..\\..\\") + relativeFileName);
+		candidates.Add(WString(L"..\\..\\..\\") + relativeFileName);
+		candidates.Add(WString(L"..\\..\\mytest\\") + relativeFileName);
+
+		for (auto candidate : candidates)
+		{
+			try
+			{
+				if (File(candidate).Exists())
+				{
+					return FilePath(candidate).GetFullPath();
+				}
+			}
+			catch (const Error&)
+			{
+			}
+			catch (const Exception&)
+			{
+			}
+		}
+
+		CHECK_ERROR(false, (WString(L"找不到脚本文件： ") + relativeFileName).Buffer());
+		return WString::Empty;
+	}
+
+	static void BuildDebugSourceMap(const ScriptCase& scriptCase, List<WorkflowDebugSourceRecord>& sourceMap)
+	{
+		sourceMap.Clear();
+
+		auto sourcePath = ResolveScriptPath(scriptCase.fileName);
+		List<WString> lines;
+		CHECK_ERROR(File(sourcePath).ReadAllLinesByBom(lines), L"读取脚本文件行数失败。");
+
+		for (vint row = 0; row < lines.Count(); row++)
+		{
+			WorkflowDebugSourceRecord record;
+			record.codeIndex = 0;
+			record.sourcePath = sourcePath;
+			record.row = row;
+			sourceMap.Add(record);
+		}
+	}
+#endif
+
 	bool RunScriptCase(const ScriptCase& scriptCase)
 	{
 		Console::WriteLine(L"");
@@ -82,6 +254,7 @@ namespace
 		Console::WriteLine(L"测试场景： " + WString(scriptCase.name));
 		Console::WriteLine(L"文件路径： " + WString(scriptCase.fileName));
 		Console::WriteLine(L"说明： " + WString(scriptCase.description));
+		Console::WriteLine(L"正在读取并编译脚本。");
 
 		Parser parser;
 		List<WString> moduleCodes;
@@ -98,9 +271,25 @@ namespace
 			}
 			return false;
 		}
+		Console::WriteLine(L"脚本编译完成。");
+
+#if defined VCZH_MSVC && defined VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
+		if (gWorkflowDebugSession)
+		{
+			List<WorkflowDebugSourceRecord> sourceMap;
+			BuildDebugSourceMap(scriptCase, sourceMap);
+			gWorkflowDebugSession->SetSourceMap(sourceMap);
+			Console::WriteLine(L"正在发送 Workflow 调试 hello。");
+			CHECK_ERROR(gWorkflowDebugSession->SendHello(), L"发送 Workflow 调试 hello 失败。");
+			CHECK_ERROR(gWorkflowDebugSession->WaitForReady(5000), L"等待 Workflow 调试器完成握手超时。");
+			Console::WriteLine(L"Workflow 调试握手完成。");
+		}
+#endif
 
 		auto context = Ptr(new WfRuntimeGlobalContext(assembly));
+		Console::WriteLine(L"正在执行初始化函数。");
 		LoadFunction<void()>(context, L"<initialize>")();
+		Console::WriteLine(L"正在执行 main。");
 		auto result = LoadFunction<WString()>(context, L"main")();
 		Console::WriteLine(L"脚本返回： " + result);
 		return true;
@@ -126,18 +315,47 @@ int main(int argc, char* argv[])
 {
 	WString selectedCase = L"";
 #if defined VCZH_MSVC
-	if (argc > 1)
+	for (vint i = 1; i < argc; i++)
 	{
-		selectedCase = argv[1];
+		WString argument = argv[i];
+		// 允许调试开关和脚本名自由排列，避免把 --workflow-debug 误判成脚本选择。
+		if (argument.Left(2) == L"--")
+		{
+			continue;
+		}
+		selectedCase = argument;
+		break;
 	}
 #endif
-
 	auto typesLoaded = false;
 	auto success = false;
+#if defined VCZH_MSVC && defined VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
+	auto debugOptions = ParseDebugLaunchOptions(argc, argv);
+	DebugSessionGuard debugSession;
+	if (debugOptions.enabled && selectedCase.Length() == 0)
+	{
+		selectedCase = ScriptCases[0].name;
+		Console::WriteLine(L"已启用 Workflow 调试但未指定脚本场景，默认使用 HelloWorld。");
+	}
+#endif
 	try
 	{
 		LoadScriptTypes();
 		typesLoaded = true;
+
+#if defined VCZH_MSVC && defined VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
+		if (debugOptions.enabled)
+		{
+			Console::WriteLine(L"已启用 Workflow 调试宿主，准备连接 " + debugOptions.host + L":" + itow(debugOptions.port) + L"。");
+			debugSession.host = Ptr(new WorkflowDebugHost);
+			debugSession.host->Initialize();
+			debugSession.session = debugSession.host->CreateSession(debugOptions.sessionId);
+			debugSession.session->GetTransport()->SetEndpoint(debugOptions.host, debugOptions.port);
+			debugSession.session->Attach();
+			Console::WriteLine(L"Workflow 调试宿主已连接。");
+			gWorkflowDebugSession = debugSession.session.Obj();
+		}
+#endif
 
 		auto matched = false;
 		success = true;
@@ -163,15 +381,37 @@ int main(int argc, char* argv[])
 			success = false;
 		}
 	}
+	catch (const Error& ex)
+	{
+		Console::WriteLine(L"运行时发生错误： " + WString::Unmanaged(ex.Description()));
+		success = false;
+	}
 	catch (const Exception& ex)
 	{
 		Console::WriteLine(L"运行时发生异常： " + ex.Message());
+		success = false;
 	}
 
+#if defined VCZH_MSVC && defined VCZH_DESCRIPTABLEOBJECT_WITH_METADATA
+	debugSession.Reset();
+	gWorkflowDebugSession = nullptr;
+#endif
 	if (typesLoaded)
 	{
-		UnloadScriptTypes();
+		try
+		{
+			Console::WriteLine(L"正在卸载脚本类型。");
+			UnloadScriptTypes();
+			Console::WriteLine(L"脚本类型卸载完成。");
+		}
+		catch (const Exception& ex)
+		{
+			Console::WriteLine(L"卸载脚本类型时发生异常： " + ex.Message());
+			success = false;
+		}
 	}
+	Console::WriteLine(L"正在释放线程本地存储。");
 	ThreadLocalStorage::DisposeStorages();
+	Console::WriteLine(L"线程本地存储释放完成。");
 	return success ? 0 : 1;
 }

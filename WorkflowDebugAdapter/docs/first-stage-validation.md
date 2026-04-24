@@ -7,6 +7,7 @@
    - `WorkflowDebugAdapter: 第一阶段烟雾测试`
    - `Workflow RuntimeTest x64`
    - `Workflow RuntimeTest Win32`
+   - `Workflow mytest`
 3. 在 VSCode 的“任务”面板里可以直接运行：
    - `Workflow: 第一阶段验证`
 4. 这套配置用于验证第一阶段成果，不是最终的 Workflow 调试扩展入口。
@@ -15,6 +16,7 @@
    - “输出”面板通道名是 `Workflow 调试器`
    - “调试控制台”里的日志来自 DAP `output` 事件
 7. `connectTimeoutMs` 默认是 `0`，表示等待宿主连接时不超时；如果你想限制等待时间，可以在 `launch.json` 里显式改成一个正整数毫秒值。
+8. 如果要调试 `D:\repos\Workflow-master\Test\UnitTest\mytest`，可以直接使用 `Workflow mytest`，它会把 `workspaceRoot` 指向 `Test\\UnitTest\\mytest`。
 
 ## 自动化验证
 

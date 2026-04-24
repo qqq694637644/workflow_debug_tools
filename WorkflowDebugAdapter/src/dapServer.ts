@@ -434,6 +434,9 @@ export class WorkflowDebugDapServer {
       this.log('宿主连接已关闭。');
       this.failPendingRequests(new Error('调试桥接已断开。'));
       this.sendEvent('terminated', {});
+      void this.disposeTransport().catch((error) => {
+        this.writeError(`关闭调试桥接失败：${error instanceof Error ? error.message : String(error)}`);
+      });
     });
 
     transport.onError((error) => {
@@ -964,15 +967,22 @@ export class WorkflowDebugDapServer {
     this.terminated = true;
     this.log(`开始关闭调试会话：${reason}。`);
     this.failPendingRequests(new Error('调试会话已关闭。'));
+    await this.disposeTransport();
+  }
 
-    if (this.transport) {
-      try {
-        await this.transport.close();
-      }
-      catch (error) {
-        this.writeError(`关闭调试桥接失败：${error instanceof Error ? error.message : String(error)}`);
-      }
-      this.transport = null;
+  private async disposeTransport(): Promise<void> {
+    const transport = this.transport;
+    this.transport = null;
+
+    if (!transport) {
+      return;
+    }
+
+    try {
+      await transport.close();
+    }
+    catch (error) {
+      this.writeError(`关闭调试桥接失败：${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
