@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { formatDebugMessage } from '../src/logFormat.js';
+import { formatDebugMessage, shouldSuppressAdapterError } from '../src/logFormat.js';
 
 function verifyLogFormat(): void {
   const message = new Error('boom');
@@ -18,6 +18,11 @@ function verifyLogFormat(): void {
     code: 'EPIPE',
     errno: -4047
   }));
+
+  assert.equal(shouldSuppressAdapterError(new Error('connection closed'), true), true);
+  assert.equal(shouldSuppressAdapterError(new Error('write EPIPE'), true), true);
+  assert.equal(shouldSuppressAdapterError(new Error('connection closed'), false), false);
+  assert.equal(shouldSuppressAdapterError(new Error('boom'), true), false);
 }
 
 verifyLogFormat();

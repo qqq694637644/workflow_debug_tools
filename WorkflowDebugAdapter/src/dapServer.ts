@@ -209,6 +209,9 @@ export class WorkflowDebugDapServer {
         case 'disconnect':
           await this.handleDisconnectRequest(message);
           return;
+        case 'restart':
+          await this.handleRestartRequest(message);
+          return;
         case 'setExceptionBreakpoints':
           this.sendResponse(message, {});
           return;
@@ -415,8 +418,20 @@ export class WorkflowDebugDapServer {
 
   private async handleDisconnectRequest(message: DapRequestMessage): Promise<void> {
     this.log('收到 disconnect。');
-    await this.shutdown('disconnect');
     this.sendResponse(message, {});
+    this.terminated = true;
+    this.failPendingRequests(new Error('调试会话已关闭。'));
+    this.sendEvent('terminated', {});
+    void this.disposeTransport();
+  }
+
+  private async handleRestartRequest(message: DapRequestMessage): Promise<void> {
+    this.log('收到 restart。');
+    this.sendResponse(message, {});
+    this.terminated = true;
+    this.failPendingRequests(new Error('调试会话已关闭。'));
+    this.sendEvent('terminated', {});
+    void this.disposeTransport();
   }
 
   private installTransportHandlers(transport: BridgeTransport<ProtocolEnvelope>): void {
@@ -596,6 +611,7 @@ export class WorkflowDebugDapServer {
       supportsSetVariable: false,
       supportsStepBack: false,
       supportsStepInTargetsRequest: false,
+      supportsRestartRequest: true,
       supportsTerminateRequest: true,
       supportsThreadsRequest: true,
       supportsStackTraceRequest: true,

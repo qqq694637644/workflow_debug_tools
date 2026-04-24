@@ -651,14 +651,14 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
           threadId: 1
         }
       ]);
+
+      const restartResponse = await client.request('restart');
+      assert.equal(restartResponse.success, true);
+      await client.waitForEvent('terminated');
+      await waitForPortBindable(port);
     }
     finally {
       await host.close();
-      await waitForCondition(
-        () => client.getReceivedMessages().some((message) => message.type === 'event' && message.event === 'terminated'),
-        '等待 terminated 事件超时。'
-      );
-      await waitForPortBindable(port);
     }
   }
   finally {

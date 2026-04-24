@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { formatDebugMessage } from './logFormat.js';
+import { formatDebugMessage, shouldSuppressAdapterError } from './logFormat.js';
 import { WorkflowDebugAdapterServerHost } from './debugAdapterServerHost.js';
 import { getTraceFilePath, resetTraceLog, traceDebugMessage } from './diagnosticTrace.js';
 
@@ -59,14 +59,31 @@ export async function activate(context: { subscriptions: Array<{ dispose(): void
   const trackerFactory = {
     createDebugAdapterTracker(session: any) {
       writeLog(`创建调试会话追踪器：${session?.type ?? 'workflow'}`);
+      let sessionClosing = false;
+      let sessionTerminated = false;
       return {
         onWillReceiveMessage(message: unknown): void {
+          if (message && typeof message === 'object') {
+            const request = message as { readonly type?: string; readonly command?: string };
+            if (request.type === 'request' && request.command === 'disconnect') {
+              sessionClosing = true;
+            }
+          }
           writeLog(`-> ${formatDebugMessage(message)}`);
         },
         onDidSendMessage(message: unknown): void {
+          if (message && typeof message === 'object') {
+            const event = message as { readonly type?: string; readonly event?: string };
+            if (event.type === 'event' && event.event === 'terminated') {
+              sessionTerminated = true;
+            }
+          }
           writeLog(`<- ${formatDebugMessage(message)}`);
         },
         onError(error: unknown): void {
+          if (shouldSuppressAdapterError(error, sessionClosing || sessionTerminated)) {
+            return;
+          }
           writeLog(`调试适配器错误：${formatDebugMessage(error)}`);
         },
         onExit(code: number | undefined, signal: string | undefined): void {
