@@ -24,8 +24,6 @@ import { createEventEnvelope } from '../src/protocol.js';
 
 const remotePath = 'D:/repos/Workflow-master/Test/Resources/Debugger/RaiseException.txt';
 const localPath = 'C:/workspace/Workflow-master/Test/Resources/Debugger/RaiseException.txt';
-const normalizedLocalPath = localPath.replace(/^([A-Z]):/, (_, drive: string) => `${drive.toLowerCase()}:`);
-
 const sourceMap = [
   {
     codeIndex: 12,
@@ -626,7 +624,7 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
         readonly stackFrames: Array<{ readonly id: number; readonly name: string; readonly source?: { readonly path?: string }; readonly column?: number }>;
       };
       assert.equal(stackTraceBody.stackFrames[0].name, 'RaiseException');
-      assert.equal(stackTraceBody.stackFrames[0].source?.path, normalizedLocalPath);
+      assert.equal(stackTraceBody.stackFrames[0].source?.path, remotePath);
       assert.equal(stackTraceBody.stackFrames[0].column, undefined);
 
       const scopesResponse = await client.request('scopes', {

@@ -57,8 +57,6 @@ function verifySourceCatalogAndBreakpointRegistry(): void {
   assert.equal(catalog.resolveCodeIndex(localPath), 7);
   assert.equal(catalog.resolveSourcePath(7), remotePath);
   assert.equal(catalog.resolveDisplayPath(remotePath), normalizedLocalPath);
-  assert.equal(catalog.hasMappedDisplayPath(remotePath), true);
-  assert.equal(catalog.hasMappedDisplayPath('D:/repos/Workflow-master/Test/Resources/Rpc/Standalone.txt'), false);
   assert.deepEqual(catalog.resolveByCodeIndex(7)?.rows, [9, 10]);
 
   const registry = new BreakpointRegistry(catalog);

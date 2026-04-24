@@ -709,12 +709,11 @@ export class WorkflowDebugDapServer {
     const id = this.getStackFrameId(frame.threadId, frame.frameId);
     const sourceCatalog = this.adapter.getSourceCatalog();
     const displayPath = sourceCatalog.resolveDisplayPath(frame.sourcePath);
-    const sourcePath = sourceCatalog.hasMappedDisplayPath(frame.sourcePath) ? displayPath : frame.sourcePath;
     return {
       id,
       name: frame.name,
       source: {
-        path: sourcePath,
+        path: frame.sourcePath,
         name: getFileName(frame.sourcePath)
       },
       line: frame.line,

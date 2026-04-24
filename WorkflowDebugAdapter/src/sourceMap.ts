@@ -152,11 +152,6 @@ export class SourceCatalog {
     return this.aliasesByRemote.get(canonicalPath) ?? canonicalPath;
   }
 
-  public hasMappedDisplayPath(sourcePath: string): boolean {
-    const canonicalPath = this.resolveCanonicalPath(sourcePath);
-    return this.aliasesByRemote.has(canonicalPath);
-  }
-
   public findRow(codeIndex: number, row: number): SourceMapEntry | null {
     const entry = this.entriesByCodeIndex.get(codeIndex);
     if (!entry || !entry.rows.has(row)) {
