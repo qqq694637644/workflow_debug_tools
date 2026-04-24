@@ -1,5 +1,7 @@
 import { BridgeTransport, type BridgeTransportEndpoint } from './bridgeTransport.js';
+import { normalizeConnectTimeoutMs, waitForOptionalTimeout } from './attachTimeout.js';
 import { AdapterSessionMachine } from './sessionMachine.js';
+import { traceDebugMessage } from './diagnosticTrace.js';
 import {
   createDapEvent,
   createDapResponse,
@@ -43,26 +45,6 @@ function createDeferred<T>(): Deferred<T> {
     resolve,
     reject
   };
-}
-
-function waitWithTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
-    return promise;
-  }
-
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(message));
-    }, timeoutMs);
-
-    promise.then((value) => {
-      clearTimeout(timer);
-      resolve(value);
-    }, (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-  });
 }
 
 function assertInteger(value: unknown, name: string): asserts value is number {
@@ -165,10 +147,12 @@ export class WorkflowDebugDapServer {
         }
       }
       catch (error) {
+        traceDebugMessage('dapServer', `DAP 输入解析失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
         this.writeError(`DAP 输入解析失败：${error instanceof Error ? error.message : String(error)}`);
       }
     });
     this.input.on('end', () => {
+      traceDebugMessage('dapServer', '输入流结束。');
       this.log('DAP 输入流结束。');
       void this.shutdown('stdin closed');
     });
@@ -187,6 +171,7 @@ export class WorkflowDebugDapServer {
 
     try {
       this.log(`收到 DAP 请求：${message.command}。`);
+      traceDebugMessage('dapServer', `收到 DAP 请求：${message.command}。`);
       switch (message.command) {
         case 'initialize':
           this.sendResponse(message, this.createInitializeResponse());
@@ -239,6 +224,7 @@ export class WorkflowDebugDapServer {
       }
     }
     catch (error) {
+      traceDebugMessage('dapServer', `处理 DAP 请求失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       this.log(`处理 DAP 请求失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       this.sendErrorResponse(message, error instanceof Error ? error.message : String(error));
     }
@@ -262,6 +248,7 @@ export class WorkflowDebugDapServer {
       port: args.port
     };
     this.log(`开始 attach，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
+    traceDebugMessage('dapServer', `开始 attach，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
     this.transport = new BridgeTransport<ProtocolEnvelope>({
       name: 'workflow-debug-dap',
       mode: 'server',
@@ -273,13 +260,23 @@ export class WorkflowDebugDapServer {
     this.installTransportHandlers(this.transport);
     await this.transport.listen();
     this.log(`调试适配器已监听 ${endpoint.host}:${endpoint.port}。`);
+    traceDebugMessage('dapServer', `调试适配器已监听 ${endpoint.host}:${endpoint.port}。`);
     this.sendOutput(`Workflow 调试桥接已监听 ${endpoint.host}:${endpoint.port}。`, 'console');
 
     try {
       this.log('等待 WorkflowDebugHost 完成握手。');
-      await waitWithTimeout(
+      traceDebugMessage('dapServer', '等待 WorkflowDebugHost 完成握手。');
+      const timeoutMs = args.connectTimeoutMs;
+      if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+        this.log(`等待 WorkflowDebugHost 完成握手（超时 ${timeoutMs} 毫秒）。`);
+      }
+      else {
+        this.log('等待 WorkflowDebugHost 完成握手（无限等待）。');
+      }
+
+      await waitForOptionalTimeout(
         this.readyDeferred.promise,
-        args.connectTimeoutMs ?? 30000,
+        timeoutMs,
         '等待 WorkflowDebugHost 连接超时。'
       );
     }
@@ -290,6 +287,7 @@ export class WorkflowDebugDapServer {
     }
 
     this.log('attach 完成，双方握手成功。');
+    traceDebugMessage('dapServer', 'attach 完成，双方握手成功。');
     this.sendEvent('initialized', {});
     this.sendResponse(message, {});
     this.flushBufferedOutputs();
@@ -775,9 +773,7 @@ export class WorkflowDebugDapServer {
         })
       : [];
 
-    const connectTimeoutMs = typeof record.connectTimeoutMs === 'number' && Number.isInteger(record.connectTimeoutMs) && record.connectTimeoutMs > 0
-      ? record.connectTimeoutMs
-      : undefined;
+    const connectTimeoutMs = normalizeConnectTimeoutMs(record.connectTimeoutMs);
 
     return {
       host,
@@ -1001,11 +997,13 @@ export class WorkflowDebugDapServer {
   }
 
   private writeError(message: string): void {
+    traceDebugMessage('dapServer', message);
     this.sendOutput(message, 'stderr');
   }
 
   private log(message: string): void {
     const line = `[WorkflowDebugAdapter] ${message}`;
+    traceDebugMessage('dapServer', line);
     this.sendOutput(line, 'console');
   }
 

@@ -8,6 +8,7 @@
     "host": "127.0.0.1",
     "port": 4711,
     "workspaceRoot": "${workspaceFolder}",
+    "connectTimeoutMs": 0,
     "pathMapping": []
     }
   ]

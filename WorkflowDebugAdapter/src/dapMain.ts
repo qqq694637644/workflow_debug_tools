@@ -1,6 +1,8 @@
 import { WorkflowDebugDapServer } from './dapServer.js';
+import { traceDebugMessage } from './diagnosticTrace.js';
 
 function writeStartupLog(message: string): void {
+  traceDebugMessage('dapMain', message);
   process.stderr.write(`[WorkflowDebugAdapter] ${message}\n`);
 }
 
