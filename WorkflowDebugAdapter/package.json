@@ -33,11 +33,11 @@
               "host": {
                 "type": "string",
                 "default": "127.0.0.1",
-                "description": "WorkflowDebugHost 监听的主机地址。"
+                "description": "调试适配器监听的主机地址，宿主程序会连接到这里。"
               },
               "port": {
                 "type": "number",
-                "description": "WorkflowDebugHost 连接到调试适配器的端口。"
+                "description": "调试适配器监听的端口，宿主程序连接到该端口。"
               },
               "workspaceRoot": {
                 "type": "string",

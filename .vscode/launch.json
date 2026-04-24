@@ -45,7 +45,7 @@
       "externalConsole": false
     },
     {
-    "name": "附加到 Workflow",
+    "name": "Workflow",
     "type": "workflow",
     "request": "attach",
     "host": "127.0.0.1",

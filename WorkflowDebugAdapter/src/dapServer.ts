@@ -151,6 +151,7 @@ export class WorkflowDebugDapServer {
   }
 
   public async run(): Promise<void> {
+    this.log('DAP 服务器启动。');
     this.input.on('data', (chunk: Buffer | string) => {
       try {
         for (const message of this.reader.push(chunk)) {
@@ -162,6 +163,7 @@ export class WorkflowDebugDapServer {
       }
     });
     this.input.on('end', () => {
+      this.log('DAP 输入流结束。');
       void this.shutdown('stdin closed');
     });
     this.input.resume();
@@ -169,6 +171,7 @@ export class WorkflowDebugDapServer {
     await new Promise<void>((resolve) => {
       this.input.once('close', resolve);
     });
+    this.log('DAP 服务器退出。');
   }
 
   private async handleMessage(message: DapMessage): Promise<void> {
@@ -177,6 +180,7 @@ export class WorkflowDebugDapServer {
     }
 
     try {
+      this.log(`收到 DAP 请求：${message.command}。`);
       switch (message.command) {
         case 'initialize':
           this.sendResponse(message, this.createInitializeResponse());
@@ -229,6 +233,7 @@ export class WorkflowDebugDapServer {
       }
     }
     catch (error) {
+      this.log(`处理 DAP 请求失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       this.sendErrorResponse(message, error instanceof Error ? error.message : String(error));
     }
   }
@@ -250,6 +255,7 @@ export class WorkflowDebugDapServer {
       host: args.host ?? '127.0.0.1',
       port: args.port
     };
+    this.log(`开始 attach，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
     this.transport = new BridgeTransport<ProtocolEnvelope>({
       name: 'workflow-debug-dap',
       mode: 'server',
@@ -260,9 +266,11 @@ export class WorkflowDebugDapServer {
     });
     this.installTransportHandlers(this.transport);
     await this.transport.listen();
+    this.log(`调试适配器已监听 ${endpoint.host}:${endpoint.port}。`);
     this.sendOutput(`Workflow 调试桥接已监听 ${endpoint.host}:${endpoint.port}。`, 'console');
 
     try {
+      this.log('等待 WorkflowDebugHost 完成握手。');
       await waitWithTimeout(
         this.readyDeferred.promise,
         args.connectTimeoutMs ?? 30000,
@@ -270,10 +278,12 @@ export class WorkflowDebugDapServer {
       );
     }
     catch (error) {
+      this.log(`attach 超时或失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       await this.shutdown('attach timeout');
       throw error;
     }
 
+    this.log('attach 完成，双方握手成功。');
     this.sendEvent('initialized', {});
     this.sendResponse(message, {});
   }
@@ -298,6 +308,7 @@ export class WorkflowDebugDapServer {
 
     // 断点下发在主进程侧是事件驱动的：目标端只回 breakpointValidated，不回普通 response。
     await this.sendHostCommand(request);
+    this.log(`已向宿主下发断点：${sourcePath}，数量=${request.body.breakpoints.length}。`);
 
     if (request.body.breakpoints.length === 0) {
       this.pendingBreakpointBatches.delete(request.seq);
@@ -320,6 +331,7 @@ export class WorkflowDebugDapServer {
     const args = this.parseContinueArguments(message.arguments);
     const request = this.adapter.createContinue(args.threadId);
     await this.sendHostCommand(request);
+    this.log(`已向宿主下发 continue：threadId=${args.threadId}。`);
     this.sendResponse(message, {
       allThreadsContinued: true
     });
@@ -338,6 +350,7 @@ export class WorkflowDebugDapServer {
       ? this.adapter.createNext(args.threadId)
       : this.adapter.createStepIn(args.threadId);
     await this.sendHostCommand(request);
+    this.log(`已向宿主下发 ${command}：threadId=${args.threadId}。`);
     this.sendResponse(message, {});
     this.sendEvent('continued', {
       threadId: args.threadId,
@@ -356,6 +369,7 @@ export class WorkflowDebugDapServer {
       stackFrames,
       totalFrames: state.totalFrames
     });
+    this.log(`stackTrace 返回：threadId=${args.threadId}，帧数=${stackFrames.length}。`);
   }
 
   private async handleScopesRequest(message: DapRequestMessage): Promise<void> {
@@ -373,6 +387,7 @@ export class WorkflowDebugDapServer {
     this.sendResponse(message, {
       scopes
     });
+    this.log(`scopes 返回：frameId=${args.frameId}，作用域数=${scopes.length}。`);
   }
 
   private async handleVariablesRequest(message: DapRequestMessage): Promise<void> {
@@ -390,15 +405,18 @@ export class WorkflowDebugDapServer {
     this.sendResponse(message, {
       variables
     });
+    this.log(`variables 返回：variablesReference=${args.variablesReference}，变量数=${variables.length}。`);
   }
 
   private async handleDisconnectRequest(message: DapRequestMessage): Promise<void> {
+    this.log('收到 disconnect。');
     await this.shutdown('disconnect');
     this.sendResponse(message, {});
   }
 
   private installTransportHandlers(transport: BridgeTransport<ProtocolEnvelope>): void {
     transport.onOpen(() => {
+      this.log('宿主已连接到调试适配器。');
       this.sendOutput('WorkflowDebugHost 已连接到调试适配器。', 'stdout');
     });
 
@@ -408,16 +426,19 @@ export class WorkflowDebugDapServer {
       }
 
       this.terminated = true;
+      this.log('宿主连接已关闭。');
       this.failPendingRequests(new Error('调试桥接已断开。'));
       this.sendEvent('terminated', {});
     });
 
     transport.onError((error) => {
+      this.log(`调试桥接错误：${error.stack ?? error.message}`);
       this.writeError(`Workflow 调试桥接错误：${error.message}`);
       this.sendOutput(error.message, 'stderr');
     });
 
     transport.onMessage((message) => {
+      this.log(`收到宿主消息：${message.type}:${message.cmd}`);
       void this.handleHostMessage(message);
     });
   }
@@ -429,12 +450,14 @@ export class WorkflowDebugDapServer {
         if (pending) {
           this.pendingHostResponses.delete(message.replyTo);
           pending.resolve(message as ResponseEnvelope<ProtocolCommand>);
+          this.log(`收到宿主响应：${message.cmd}，replyTo=${message.replyTo}。`);
           return;
         }
       }
 
       if (message.type === 'event' && message.cmd === 'hello') {
         const helloMessage = message as EventEnvelope<'hello'>;
+        this.log(`收到宿主 hello：sessionId=${helloMessage.sessionId}。`);
         this.adapter.attach(helloMessage.sessionId);
         this.adapter.receiveHello(helloMessage);
         if (!this.attachArguments) {
@@ -448,6 +471,7 @@ export class WorkflowDebugDapServer {
         });
         this.initializeRequestSeq = initializeRequest.seq;
         await this.sendHostCommand(initializeRequest);
+        this.log('已向宿主发送 initialize。');
         return;
       }
 
@@ -458,6 +482,7 @@ export class WorkflowDebugDapServer {
           this.readyDeferred.resolve();
           this.readyDeferred = null;
         }
+        this.log(`收到宿主 ready：accepted=${readyMessage.body.accepted}。`);
         return;
       }
 
@@ -477,6 +502,7 @@ export class WorkflowDebugDapServer {
             }
           }
         }
+        this.log(`收到断点校验回调：breakpointId=${validationMessage.body.breakpointId} verified=${validationMessage.body.verified}。`);
         return;
       }
 
@@ -491,6 +517,7 @@ export class WorkflowDebugDapServer {
           description: this.describeStoppedReason(stoppedMessage.body.reason),
           allThreadsStopped: true
         });
+        this.log(`收到停止事件：reason=${stoppedMessage.body.reason}，threadId=${stoppedMessage.body.threadId}。`);
         return;
       }
 
@@ -506,6 +533,7 @@ export class WorkflowDebugDapServer {
           allThreadsStopped: true
         });
         this.sendOutput(exceptionMessage.body.message, 'stderr');
+        this.log(`收到异常事件：message=${exceptionMessage.body.message}。`);
         return;
       }
 
@@ -513,16 +541,19 @@ export class WorkflowDebugDapServer {
         const outputMessage = message as EventEnvelope<'output'>;
         const category = toDapCategory(outputMessage.body.level as WorkflowOutputLevel);
         this.sendOutput(outputMessage.body.message, category);
+        this.log(`收到宿主输出：level=${outputMessage.body.level}。`);
         return;
       }
 
       if (message.type === 'event' && message.cmd === 'disconnect') {
         this.terminated = true;
+        this.log('收到宿主断开事件。');
         this.sendEvent('terminated', {});
         return;
       }
     }
     catch (error) {
+      this.log(`处理被调试端消息失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       this.writeError(`处理被调试端消息失败：${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -920,6 +951,7 @@ export class WorkflowDebugDapServer {
     }
 
     this.terminated = true;
+    this.log(`开始关闭调试会话：${reason}。`);
     this.failPendingRequests(new Error('调试会话已关闭。'));
 
     if (this.transport) {
@@ -941,6 +973,10 @@ export class WorkflowDebugDapServer {
 
   private writeError(message: string): void {
     this.error.write(`${message}\n`);
+  }
+
+  private log(message: string): void {
+    this.error.write(`[WorkflowDebugAdapter] ${message}\n`);
   }
 
 }
