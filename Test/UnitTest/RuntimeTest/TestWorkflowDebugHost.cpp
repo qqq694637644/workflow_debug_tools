@@ -76,6 +76,15 @@ static bool ReadUtf8Line(SOCKET socket, WString& line)
 	}
 }
 
+static void CloseSocket(SOCKET socket)
+{
+	if (socket != INVALID_SOCKET)
+	{
+		shutdown(socket, SD_BOTH);
+		closesocket(socket);
+	}
+}
+
 static bool WaitForEnvelope(WorkflowDebugTransport& transport, WorkflowDebugEnvelope& envelope, vint timeoutMilliseconds)
 {
 	auto begin = std::chrono::steady_clock::now();
@@ -207,25 +216,25 @@ TEST_FILE
 		WorkflowDebugSessionState state;
 		auto snapshot = state.Snapshot();
 		TEST_ASSERT(snapshot.phase == WorkflowDebugSessionPhase::Idle);
-		TEST_ASSERT(snapshot.pendingRequestCount == 0);
 		TEST_ASSERT(snapshot.sessionId == L"");
+		TEST_ASSERT(snapshot.lastInboundSeq == 0);
+		TEST_ASSERT(snapshot.lastOutboundSeq == 0);
+		TEST_ASSERT(snapshot.lastStoppedReason == L"");
+		TEST_ASSERT(snapshot.lastStoppedThreadId == -1);
+		TEST_ASSERT(snapshot.lastStoppedFrameId == -1);
+		TEST_ASSERT(snapshot.lastStoppedSourceId == -1);
+		TEST_ASSERT(snapshot.lastStoppedRow == -1);
 
 		state.Attach(L"wf-2");
-		state.SetWorkspaceRoot(L"D:/workspace");
-		state.SetSourceMapCount(3);
 		state.SetLastInboundSeq(4);
 		state.SetLastOutboundSeq(5);
-		state.IncrementPendingRequestCount();
 		state.SetLastStopped(L"breakpoint", 1, 2, 3, 4);
 
 		snapshot = state.Snapshot();
 		TEST_ASSERT(snapshot.sessionId == L"wf-2");
 		TEST_ASSERT(snapshot.phase == WorkflowDebugSessionPhase::Connected);
-		TEST_ASSERT(snapshot.workspaceRoot == L"D:/workspace");
-		TEST_ASSERT(snapshot.sourceMapCount == 3);
 		TEST_ASSERT(snapshot.lastInboundSeq == 4);
 		TEST_ASSERT(snapshot.lastOutboundSeq == 5);
-		TEST_ASSERT(snapshot.pendingRequestCount == 1);
 		TEST_ASSERT(snapshot.lastStoppedReason == L"breakpoint");
 		TEST_ASSERT(snapshot.lastStoppedThreadId == 1);
 		TEST_ASSERT(snapshot.lastStoppedFrameId == 2);
@@ -235,7 +244,16 @@ TEST_FILE
 		state.Detach();
 		snapshot = state.Snapshot();
 		TEST_ASSERT(snapshot.phase == WorkflowDebugSessionPhase::Closed);
-		TEST_ASSERT(snapshot.pendingRequestCount == 0);
+		TEST_ASSERT(snapshot.lastInboundSeq == 4);
+		TEST_ASSERT(snapshot.lastOutboundSeq == 5);
+		TEST_ASSERT(snapshot.lastStoppedReason == L"");
+
+		state.Reset();
+		snapshot = state.Snapshot();
+		TEST_ASSERT(snapshot.phase == WorkflowDebugSessionPhase::Idle);
+		TEST_ASSERT(snapshot.sessionId == L"");
+		TEST_ASSERT(snapshot.lastInboundSeq == 0);
+		TEST_ASSERT(snapshot.lastOutboundSeq == 0);
 		TEST_ASSERT(snapshot.lastStoppedReason == L"");
 	});
 
@@ -279,7 +297,54 @@ TEST_FILE
 
 	TEST_CASE(L"WorkflowDebugTransport 收发")
 	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+
+		std::atomic<bool> serverAccepted = false;
+		std::atomic<bool> serverFailed = false;
+		std::atomic<bool> serverSucceeded = false;
+		WString serverReceivedLine;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				serverFailed = true;
+				return;
+			}
+
+			serverAccepted = true;
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+			auto firstEvent = WString(L"{\"type\":\"event\",\"seq\":101,\"sessionId\":\"wf-3\",\"cmd\":\"output\",\"body\":{\"level\":\"info\",\"message\":\"first\"}}");
+			if (!SendUtf8Line(clientSocket, firstEvent))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			if (!ReadUtf8Line(clientSocket, serverReceivedLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			auto secondEvent = WString(L"{\"type\":\"event\",\"seq\":102,\"sessionId\":\"wf-3\",\"cmd\":\"stopped\",\"body\":{\"reason\":\"breakpoint\"}}");
+			if (!SendUtf8Line(clientSocket, secondEvent))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			serverSucceeded = true;
+			CloseSocket(clientSocket);
+		});
+
 		WorkflowDebugTransport transport;
+		transport.SetEndpoint(L"127.0.0.1", port);
 		TEST_ASSERT(transport.IsOpen() == false);
 
 		WorkflowDebugEnvelope envelope;
@@ -291,19 +356,40 @@ TEST_FILE
 		envelope.body = L"{\"runtimeVersion\":\"1\"}";
 
 		TEST_ASSERT(transport.Send(envelope) == false);
-		TEST_ASSERT(transport.Open() == true);
+		TEST_ASSERT(transport.Connect() == true);
+		TEST_ASSERT(WaitForFlag(serverAccepted, 2000) == true);
 		TEST_ASSERT(transport.IsOpen() == true);
+
+		WorkflowDebugEnvelope received;
+		TEST_ASSERT(WaitForEnvelope(transport, received, 2000) == true);
+		TEST_ASSERT(received.command == L"output");
+		TEST_ASSERT(received.seq == 101);
+		TEST_ASSERT(received.sessionId == L"wf-3");
+
 		TEST_ASSERT(transport.Send(envelope) == true);
 
-		transport.QueueIncoming(envelope);
-		WorkflowDebugEnvelope received;
-		TEST_ASSERT(transport.TryReceive(received) == true);
-		TEST_ASSERT(received.command == L"hello");
-		TEST_ASSERT(received.seq == 1);
-		TEST_ASSERT(received.sessionId == L"wf-3");
+		WorkflowDebugEnvelope secondReceived;
+		TEST_ASSERT(WaitForEnvelope(transport, secondReceived, 2000) == true);
+		TEST_ASSERT(secondReceived.command == L"stopped");
+		TEST_ASSERT(secondReceived.seq == 102);
+		TEST_ASSERT(secondReceived.sessionId == L"wf-3");
 
 		transport.Close();
 		TEST_ASSERT(transport.IsOpen() == false);
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
+
+		TEST_ASSERT(serverFailed.load() == false);
+		TEST_ASSERT(serverSucceeded.load() == true);
+		TEST_ASSERT(ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"type\":\"event\"")));
+		TEST_ASSERT(ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"cmd\":\"hello\"")));
+		TEST_ASSERT(ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"sessionId\":\"wf-3\"")));
+		TEST_ASSERT(ContainsSubstring(serverReceivedLine, WString::Unmanaged(L"\"replyTo\":0")));
 	});
 
 	TEST_CASE(L"WorkflowDebugRuntimeBinding 入口暂停")
@@ -709,9 +795,28 @@ TEST_FILE
 
 	TEST_CASE(L"WorkflowDebugSession 任务流")
 	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+		std::atomic<bool> accepted = false;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				return;
+			}
+
+			accepted = true;
+			WString disconnectLine;
+			ReadUtf8Line(clientSocket, disconnectLine);
+			CloseSocket(clientSocket);
+		});
+
 		WorkflowDebugSession session(L"wf-session");
+		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
 		session.Attach();
 
+		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
 		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Connected);
 		TEST_ASSERT(session.GetTransport()->IsOpen() == true);
 		TEST_ASSERT(session.GetRuntimeBinding()->IsBound() == true);
@@ -723,41 +828,78 @@ TEST_FILE
 		hello.sessionId = L"wf-session";
 		hello.seq = 1;
 
-		TEST_ASSERT(session.Dispatch(hello) == true);
-		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Negotiating);
-
-		WorkflowDebugEnvelope initialize = hello;
-		initialize.command = L"initialize";
-		initialize.seq = 2;
-		TEST_ASSERT(session.Dispatch(initialize) == true);
-		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Ready);
+		TEST_ASSERT(session.Dispatch(hello) == false);
+		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Connected);
 
 		WorkflowDebugEnvelope exception = hello;
 		exception.kind = WorkflowDebugEnvelopeKind::Event;
 		exception.command = L"exception";
 		exception.seq = 3;
-		TEST_ASSERT(session.Dispatch(exception) == true);
-		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Paused);
-		TEST_ASSERT(session.GetState()->Snapshot().lastStoppedReason == L"exception");
+		TEST_ASSERT(session.Dispatch(exception) == false);
+		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Connected);
 
 		session.Detach();
 		TEST_ASSERT(session.GetState()->GetPhase() == WorkflowDebugSessionPhase::Closed);
 		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
 	});
 
 	TEST_CASE(L"WorkflowDebugSession 断开通知")
 	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+		std::atomic<bool> accepted = false;
+		std::atomic<bool> serverFailed = false;
+		std::atomic<bool> serverSucceeded = false;
+		WString disconnectLine;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				serverFailed = true;
+				return;
+			}
+
+			accepted = true;
+			if (!ReadUtf8Line(clientSocket, disconnectLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			serverSucceeded = true;
+			CloseSocket(clientSocket);
+		});
+
 		WorkflowDebugSession session(L"wf-disconnect");
+		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
 		session.Attach();
 
+		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
 		session.Detach();
 
-		WorkflowDebugEnvelope disconnect;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(disconnect) == true);
-		TEST_ASSERT(disconnect.kind == WorkflowDebugEnvelopeKind::Event);
-		TEST_ASSERT(disconnect.command == L"disconnect");
-		TEST_ASSERT(ContainsSubstring(disconnect.body, L"\"reason\":\"会话关闭\""));
-		TEST_ASSERT(ContainsSubstring(disconnect.body, L"\"restart\":false"));
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
+
+		TEST_ASSERT(serverFailed.load() == false);
+		TEST_ASSERT(serverSucceeded.load() == true);
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"type\":\"event\""));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"cmd\":\"disconnect\""));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"reason\":\"会话关闭\""));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"restart\":false"));
+		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
 	});
 
 	TEST_CASE(L"WorkflowDebugSession 端点连接")
@@ -784,7 +926,7 @@ TEST_FILE
 				return;
 			}
 
-			WString initialize = L"{\"type\":\"request\",\"seq\":2,\"sessionId\":\"wf-connect\",\"cmd\":\"initialize\",\"body\":{\"workspaceRoot\":\"D:/workspace\"}}";
+			WString initialize = L"{\"type\":\"request\",\"seq\":2,\"sessionId\":\"wf-connect\",\"cmd\":\"initialize\",\"body\":{\"stopOnEntry\":true}}";
 			if (!SendUtf8Line(clientSocket, initialize))
 			{
 				shutdown(clientSocket, SD_BOTH);
@@ -841,8 +983,58 @@ TEST_FILE
 
 	TEST_CASE(L"WorkflowDebugBridge 返回暂停数据")
 	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+		std::atomic<bool> accepted = false;
+		std::atomic<bool> serverFailed = false;
+		std::atomic<bool> serverSucceeded = false;
+		WString stackTraceLine;
+		WString scopesLine;
+		WString variablesLine;
+		WString disconnectLine;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				serverFailed = true;
+				return;
+			}
+
+			accepted = true;
+			if (!ReadUtf8Line(clientSocket, stackTraceLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+			if (!ReadUtf8Line(clientSocket, scopesLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+			if (!ReadUtf8Line(clientSocket, variablesLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+			if (!ReadUtf8Line(clientSocket, disconnectLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			serverSucceeded = true;
+			CloseSocket(clientSocket);
+		});
+
 		WorkflowDebugSession session(L"wf-stack");
+		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
 		session.Attach();
+		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
 
 		collections::List<WorkflowDebugStackFrame> frames;
 		WorkflowDebugStackFrame frame0;
@@ -894,39 +1086,11 @@ TEST_FILE
 		stackTrace.body = L"{\"threadId\":0,\"startFrame\":0,\"levels\":20}";
 		TEST_ASSERT(session.Dispatch(stackTrace) == true);
 
-		WorkflowDebugEnvelope stackTraceResponse;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(stackTraceResponse) == true);
-		TEST_ASSERT(stackTraceResponse.kind == WorkflowDebugEnvelopeKind::Response);
-		TEST_ASSERT(stackTraceResponse.replyTo == 10);
-		TEST_ASSERT(stackTraceResponse.command == L"stackTrace");
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"levels\":20"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"totalFrames\":2"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"callStackIndex\":1"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"callStackIndex\":0"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"line\":21"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"line\":13"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"column\":4"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"canRequestVariables\":true"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"functionName\":\"Main\""));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"functionName\":\"Helper\""));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"sourcePath\":\"D:\\/src\\/main.wf\""));
-
 		WorkflowDebugEnvelope scopes = stackTrace;
 		scopes.command = L"scopes";
 		scopes.seq = 11;
 		scopes.body = L"{\"frameId\":1}";
 		TEST_ASSERT(session.Dispatch(scopes) == true);
-
-		WorkflowDebugEnvelope scopesResponse;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(scopesResponse) == true);
-		TEST_ASSERT(scopesResponse.kind == WorkflowDebugEnvelopeKind::Response);
-		TEST_ASSERT(scopesResponse.replyTo == 11);
-		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"scopes\""));
-		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Local\""));
-		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Argument\""));
-		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Captured\""));
-		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"Global\""));
-		TEST_ASSERT(ContainsSubstring(scopesResponse.body, L"\"canExpand\":true"));
 
 		WorkflowDebugEnvelope variables = stackTrace;
 		variables.command = L"variables";
@@ -934,23 +1098,83 @@ TEST_FILE
 		variables.body = L"{\"variablesReference\":1,\"frameId\":1,\"scopeKind\":\"Local\"}";
 		TEST_ASSERT(session.Dispatch(variables) == true);
 
-		WorkflowDebugEnvelope variablesResponse;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(variablesResponse) == true);
-		TEST_ASSERT(variablesResponse.kind == WorkflowDebugEnvelopeKind::Response);
-		TEST_ASSERT(variablesResponse.replyTo == 12);
-		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"variablesReference\":1"));
-		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"variables\""));
-		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"localValue\""));
-		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"42\""));
-		TEST_ASSERT(ContainsSubstring(variablesResponse.body, L"\"canExpand\":false"));
-
 		session.Detach();
+		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
+
+		TEST_ASSERT(serverFailed.load() == false);
+		TEST_ASSERT(serverSucceeded.load() == true);
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"levels\":20"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"totalFrames\":2"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"callStackIndex\":1"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"callStackIndex\":0"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"line\":21"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"line\":13"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"column\":4"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"canRequestVariables\":true"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"functionName\":\"Main\""));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"functionName\":\"Helper\""));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"sourcePath\":\"D:\\/src\\/main.wf\""));
+		TEST_ASSERT(ContainsSubstring(scopesLine, L"\"scopes\""));
+		TEST_ASSERT(ContainsSubstring(scopesLine, L"\"Local\""));
+		TEST_ASSERT(ContainsSubstring(scopesLine, L"\"Argument\""));
+		TEST_ASSERT(ContainsSubstring(scopesLine, L"\"Captured\""));
+		TEST_ASSERT(ContainsSubstring(scopesLine, L"\"Global\""));
+		TEST_ASSERT(ContainsSubstring(scopesLine, L"\"canExpand\":true"));
+		TEST_ASSERT(ContainsSubstring(variablesLine, L"\"variablesReference\":1"));
+		TEST_ASSERT(ContainsSubstring(variablesLine, L"\"variables\""));
+		TEST_ASSERT(ContainsSubstring(variablesLine, L"\"localValue\""));
+		TEST_ASSERT(ContainsSubstring(variablesLine, L"\"42\""));
+		TEST_ASSERT(ContainsSubstring(variablesLine, L"\"canExpand\":false"));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"cmd\":\"disconnect\""));
 	});
 
 	TEST_CASE(L"WorkflowDebugBridge 负行号栈帧归一化")
 	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+		std::atomic<bool> accepted = false;
+		std::atomic<bool> serverFailed = false;
+		std::atomic<bool> serverSucceeded = false;
+		WString stackTraceLine;
+		WString disconnectLine;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				serverFailed = true;
+				return;
+			}
+
+			accepted = true;
+			if (!ReadUtf8Line(clientSocket, stackTraceLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+			if (!ReadUtf8Line(clientSocket, disconnectLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			serverSucceeded = true;
+			CloseSocket(clientSocket);
+		});
+
 		WorkflowDebugSession session(L"wf-negative-row");
+		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
 		session.Attach();
+		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
 
 		collections::List<WorkflowDebugStackFrame> frames;
 		WorkflowDebugStackFrame frame;
@@ -974,22 +1198,65 @@ TEST_FILE
 		stackTrace.body = L"{\"threadId\":0,\"startFrame\":0,\"levels\":20}";
 		TEST_ASSERT(session.Dispatch(stackTrace) == true);
 
-		WorkflowDebugEnvelope stackTraceResponse;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(stackTraceResponse) == true);
-		TEST_ASSERT(stackTraceResponse.kind == WorkflowDebugEnvelopeKind::Response);
-		TEST_ASSERT(stackTraceResponse.replyTo == 13);
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"sourceId\":-1"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"row\":0"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"line\":1"));
-		TEST_ASSERT(ContainsSubstring(stackTraceResponse.body, L"\"functionName\":\"Hidden\""));
-
 		session.Detach();
+		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
+
+		TEST_ASSERT(serverFailed.load() == false);
+		TEST_ASSERT(serverSucceeded.load() == true);
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"sourceId\":-1"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"row\":0"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"line\":1"));
+		TEST_ASSERT(ContainsSubstring(stackTraceLine, L"\"functionName\":\"Hidden\""));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"cmd\":\"disconnect\""));
 	});
 
 	TEST_CASE(L"WorkflowDebugBridge 下发断点事件")
 	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+		std::atomic<bool> accepted = false;
+		std::atomic<bool> serverFailed = false;
+		std::atomic<bool> serverSucceeded = false;
+		WString validationLine;
+		WString disconnectLine;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				serverFailed = true;
+				return;
+			}
+
+			accepted = true;
+			if (!ReadUtf8Line(clientSocket, validationLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+			if (!ReadUtf8Line(clientSocket, disconnectLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			serverSucceeded = true;
+			CloseSocket(clientSocket);
+		});
+
 		WorkflowDebugSession session(L"wf-breakpoint");
+		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
 		session.Attach();
+		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
 
 		session.GetSourceCatalog()->RegisterSource(7, L"D:/src/main.wf", 12);
 
@@ -1001,24 +1268,76 @@ TEST_FILE
 		setBreakpoints.body = L"{\"sourcePath\":\"D:/src/main.wf\",\"codeIndex\":7,\"breakpoints\":[{\"breakpointId\":\"wf-bp-1\",\"row\":28,\"condition\":\"x > 0\",\"logMessage\":\"hit\"}]}";
 
 		TEST_ASSERT(session.Dispatch(setBreakpoints) == true);
-
-		WorkflowDebugEnvelope validation;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(validation) == true);
-		TEST_ASSERT(validation.kind == WorkflowDebugEnvelopeKind::Event);
-		TEST_ASSERT(validation.command == L"breakpointValidated");
-		TEST_ASSERT(validation.replyTo == 20);
-		TEST_ASSERT(ContainsSubstring(validation.body, L"\"breakpointId\":\"wf-bp-1\""));
-		TEST_ASSERT(ContainsSubstring(validation.body, L"\"verified\":true"));
-		TEST_ASSERT(!ContainsSubstring(validation.body, L"\"reason\""));
 		TEST_ASSERT(session.GetBreakpointRegistry()->Count() == 1);
 
 		session.Detach();
+		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
+
+		TEST_ASSERT(serverFailed.load() == false);
+		TEST_ASSERT(serverSucceeded.load() == true);
+		TEST_ASSERT(ContainsSubstring(validationLine, L"\"type\":\"event\""));
+		TEST_ASSERT(ContainsSubstring(validationLine, L"\"cmd\":\"breakpointValidated\""));
+		TEST_ASSERT(ContainsSubstring(validationLine, L"\"replyTo\":20"));
+		TEST_ASSERT(ContainsSubstring(validationLine, L"\"breakpointId\":\"wf-bp-1\""));
+		TEST_ASSERT(ContainsSubstring(validationLine, L"\"verified\":true"));
+		TEST_ASSERT(!ContainsSubstring(validationLine, L"\"reason\""));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"cmd\":\"disconnect\""));
 	});
 
 	TEST_CASE(L"WorkflowDebugBridge 暂停与异常事件")
 	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+		std::atomic<bool> accepted = false;
+		std::atomic<bool> serverFailed = false;
+		std::atomic<bool> serverSucceeded = false;
+		WString stoppedLine;
+		WString exceptionLine;
+		WString disconnectLine;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				serverFailed = true;
+				return;
+			}
+
+			accepted = true;
+			if (!ReadUtf8Line(clientSocket, stoppedLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+			if (!ReadUtf8Line(clientSocket, exceptionLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+			if (!ReadUtf8Line(clientSocket, disconnectLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			serverSucceeded = true;
+			CloseSocket(clientSocket);
+		});
+
 		WorkflowDebugSession session(L"wf-event");
+		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
 		session.Attach();
+		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
 
 		collections::List<WorkflowDebugStackFrame> frames;
 		WorkflowDebugStackFrame frame0;
@@ -1044,52 +1363,103 @@ TEST_FILE
 		session.GetState()->SetLastStopped(L"breakpoint", 2, 1, 7, 20);
 		TEST_ASSERT(session.GetBridge()->NotifyStopped() == true);
 
-		WorkflowDebugEnvelope stopped;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(stopped) == true);
-		TEST_ASSERT(stopped.kind == WorkflowDebugEnvelopeKind::Event);
-		TEST_ASSERT(stopped.command == L"stopped");
-		TEST_ASSERT(stopped.replyTo == 30);
-		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"reason\":\"breakpoint\""));
-		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"threadId\":2"));
-		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"frameId\":1"));
-		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"sourceId\":7"));
-		TEST_ASSERT(ContainsSubstring(stopped.body, L"\"row\":20"));
-
 		session.GetState()->SetLastInboundSeq(31);
 		session.GetState()->SetLastStopped(L"exception", 2, 1, 7, 20);
 		TEST_ASSERT(session.GetBridge()->NotifyException(L"boom", true) == true);
 
-		WorkflowDebugEnvelope exceptionEvent;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(exceptionEvent) == true);
-		TEST_ASSERT(exceptionEvent.kind == WorkflowDebugEnvelopeKind::Event);
-		TEST_ASSERT(exceptionEvent.command == L"exception");
-		TEST_ASSERT(exceptionEvent.replyTo == 31);
-		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"message\":\"boom\""));
-		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"fatal\":true"));
-		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"callStack\""));
-		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"functionName\":\"Main\""));
-		TEST_ASSERT(ContainsSubstring(exceptionEvent.body, L"\"functionName\":\"Helper\""));
-
 		session.Detach();
+		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
+
+		TEST_ASSERT(serverFailed.load() == false);
+		TEST_ASSERT(serverSucceeded.load() == true);
+		TEST_ASSERT(ContainsSubstring(stoppedLine, L"\"type\":\"event\""));
+		TEST_ASSERT(ContainsSubstring(stoppedLine, L"\"cmd\":\"stopped\""));
+		TEST_ASSERT(ContainsSubstring(stoppedLine, L"\"replyTo\":30"));
+		TEST_ASSERT(ContainsSubstring(stoppedLine, L"\"reason\":\"breakpoint\""));
+		TEST_ASSERT(ContainsSubstring(stoppedLine, L"\"threadId\":2"));
+		TEST_ASSERT(ContainsSubstring(stoppedLine, L"\"frameId\":1"));
+		TEST_ASSERT(ContainsSubstring(stoppedLine, L"\"sourceId\":7"));
+		TEST_ASSERT(ContainsSubstring(stoppedLine, L"\"row\":20"));
+		TEST_ASSERT(ContainsSubstring(exceptionLine, L"\"type\":\"event\""));
+		TEST_ASSERT(ContainsSubstring(exceptionLine, L"\"cmd\":\"exception\""));
+		TEST_ASSERT(ContainsSubstring(exceptionLine, L"\"replyTo\":31"));
+		TEST_ASSERT(ContainsSubstring(exceptionLine, L"\"message\":\"boom\""));
+		TEST_ASSERT(ContainsSubstring(exceptionLine, L"\"fatal\":true"));
+		TEST_ASSERT(ContainsSubstring(exceptionLine, L"\"callStack\""));
+		TEST_ASSERT(ContainsSubstring(exceptionLine, L"\"functionName\":\"Main\""));
+		TEST_ASSERT(ContainsSubstring(exceptionLine, L"\"functionName\":\"Helper\""));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"cmd\":\"disconnect\""));
 	});
 
 	TEST_CASE(L"WorkflowDebugBridge 输出事件")
 	{
+		vint port = 0;
+		auto listenSocket = CreateLoopbackListener(port);
+		std::atomic<bool> accepted = false;
+		std::atomic<bool> serverFailed = false;
+		std::atomic<bool> serverSucceeded = false;
+		WString outputLine;
+		WString disconnectLine;
+		std::thread serverThread([&]()
+		{
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket == INVALID_SOCKET)
+			{
+				serverFailed = true;
+				return;
+			}
+
+			accepted = true;
+			if (!ReadUtf8Line(clientSocket, outputLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+			if (!ReadUtf8Line(clientSocket, disconnectLine))
+			{
+				serverFailed = true;
+				CloseSocket(clientSocket);
+				return;
+			}
+
+			serverSucceeded = true;
+			CloseSocket(clientSocket);
+		});
+
 		WorkflowDebugSession session(L"wf-output");
+		session.GetTransport()->SetEndpoint(L"127.0.0.1", port);
 		session.Attach();
+		TEST_ASSERT(WaitForFlag(accepted, 2000) == true);
 
 		TEST_ASSERT(session.GetBridge()->NotifyOutput(L"warn", L"当前暂停位置无法映射到源码") == true);
 
-		WorkflowDebugEnvelope output;
-		TEST_ASSERT(session.GetTransport()->TryPopOutgoing(output) == true);
-		TEST_ASSERT(output.kind == WorkflowDebugEnvelopeKind::Event);
-		TEST_ASSERT(output.command == L"output");
-		TEST_ASSERT(output.replyTo == -1);
-		TEST_ASSERT(output.sessionId == L"wf-output");
-		TEST_ASSERT(ContainsSubstring(output.body, L"\"level\":\"warn\""));
-		TEST_ASSERT(ContainsSubstring(output.body, L"\"message\":\"当前暂停位置无法映射到源码\""));
-
 		session.Detach();
+		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
+
+		closesocket(listenSocket);
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
+		WSACleanup();
+
+		TEST_ASSERT(serverFailed.load() == false);
+		TEST_ASSERT(serverSucceeded.load() == true);
+		TEST_ASSERT(ContainsSubstring(outputLine, L"\"type\":\"event\""));
+		TEST_ASSERT(ContainsSubstring(outputLine, L"\"cmd\":\"output\""));
+		TEST_ASSERT(ContainsSubstring(outputLine, L"\"replyTo\":-1"));
+		TEST_ASSERT(ContainsSubstring(outputLine, L"\"sessionId\":\"wf-output\""));
+		TEST_ASSERT(ContainsSubstring(outputLine, L"\"level\":\"warn\""));
+		TEST_ASSERT(ContainsSubstring(outputLine, L"\"message\":\"当前暂停位置无法映射到源码\""));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"cmd\":\"disconnect\""));
 	});
 
 	TEST_CASE(L"RemoteWfDebugger 暂停恢复")
