@@ -720,8 +720,9 @@ export class WorkflowDebugDapServer {
       id,
       name: frame.name,
       source: {
-        path: frame.sourcePath,
-        name: getFileName(frame.sourcePath)
+        // 这里必须返回映射后的本地路径，否则远程路径会把调试光标落到工作区外。
+        path: displayPath,
+        name: getFileName(displayPath)
       },
       line: frame.line,
       // VS Code 的焦点定位要求列号有效；这里固定到行首，避免把调试光标落到语句内部字符上。

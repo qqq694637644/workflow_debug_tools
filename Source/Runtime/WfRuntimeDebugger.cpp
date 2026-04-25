@@ -313,6 +313,16 @@ WfDebugger Callback Handlers
 						break;
 					default:;
 					}
+					if (!needToBreak
+						&& runningTypeSnapshot == RunStepOut
+						&& instructionLocationSnapshot.stackFrameIndex == 0
+						&& il.stackFrameIndex == 0
+						&& assembly->instructions[instruction].code == WfInsCode::Return)
+					{
+						// 顶层函数没有 caller，stepOut 如果只比较栈深度就永远不会停。
+						// 这里必须在返回语句处直接断下，否则脚本会一路跑到线程结束。
+						needToBreak = true;
+					}
 					if (needToBreak)
 					{
 						SPIN_LOCK(g_debuggerStateLock)

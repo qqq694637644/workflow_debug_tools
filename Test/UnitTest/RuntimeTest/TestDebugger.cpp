@@ -605,11 +605,23 @@ TEST_FILE
 
 				TEST_ASSERT(debugger->GetState() == WfDebugger::PauseByOperation);
 				TEST_ASSERT(debugger->GetLastActivatedBreakPoint() == WfDebugger::PauseBreakPoint);
-				TEST_ASSERT(debugger->GetCurrentPosition().start.row == 21);
+				TEST_ASSERT(debugger->GetCurrentPosition().start.row == 20);
 				TEST_ASSERT(debugger->GetCurrentThreadContext()->stackFrames.Count() == 1);
 
 				s = debugger->GetValueByName(L"s");
-				TEST_ASSERT(UnboxValue<WString>(s) == L"one");
+				TEST_ASSERT(UnboxValue<WString>(s) == L"zero");
+
+				TEST_ASSERT(debugger->StepOut());
+				TEST_ASSERT(debugger->GetState() == WfDebugger::Continue);
+				debugger->Continue();
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::PauseByOperation);
+				TEST_ASSERT(debugger->GetLastActivatedBreakPoint() == WfDebugger::PauseBreakPoint);
+				TEST_ASSERT(debugger->GetCurrentPosition().start.row == 23);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->stackFrames.Count() == 1);
+
+				s = debugger->GetValueByName(L"s");
+				TEST_ASSERT(UnboxValue<WString>(s) == L"three");
 
 				TEST_ASSERT(debugger->Run());
 				TEST_ASSERT(debugger->GetState() == WfDebugger::Continue);

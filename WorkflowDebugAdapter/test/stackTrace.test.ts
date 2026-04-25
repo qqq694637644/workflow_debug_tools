@@ -158,6 +158,7 @@ function verifyStackTraceRequestAndModel(): void {
 
   assert.equal(response.body.totalFrames, 3);
   assert.equal(response.body.frames?.length, 3);
+  assert.equal(stackState.frames[0].sourcePath, remotePath);
   assert.deepEqual(
     stackState.frames.map((frame) => frame.name),
     ['leaf', 'helper', 'main']

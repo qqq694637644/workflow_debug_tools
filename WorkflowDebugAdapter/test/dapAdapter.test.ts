@@ -24,6 +24,8 @@ import { createEventEnvelope } from '../src/protocol.js';
 
 const remotePath = 'D:/repos/Workflow-master/Test/Resources/Debugger/RaiseException.txt';
 const localPath = 'C:/workspace/Workflow-master/Test/Resources/Debugger/RaiseException.txt';
+// Windows 下 DAP 和源码目录的盘符大小写可能不一致，统一成底层规范化后的路径便于断言。
+const normalizedLocalPath = localPath.replace(/^([A-Z]):/, (_, drive: string) => `${drive.toLowerCase()}:`);
 const sourceMap = [
   {
     codeIndex: 12,
@@ -652,7 +654,7 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
         readonly stackFrames: Array<{ readonly id: number; readonly name: string; readonly source?: { readonly path?: string }; readonly column?: number }>;
       };
       assert.equal(stackTraceBody.stackFrames[0].name, 'RaiseException');
-      assert.equal(stackTraceBody.stackFrames[0].source?.path, remotePath);
+      assert.equal(stackTraceBody.stackFrames[0].source?.path, normalizedLocalPath);
       assert.equal(stackTraceBody.stackFrames[0].column, 1);
 
       const scopesResponse = await client.request('scopes', {
