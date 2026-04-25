@@ -1,4 +1,4 @@
-实现workflow脚本语言的的调试功能,全部代码由chatgpt5.4mini xhigh开发
+实现workflow脚本语言的的调试功能,所有代码由chatgpt5.4mini xhigh开发
 架构,vscode起服务端,脚本语言加载调试库,远程接入调试
 
 
