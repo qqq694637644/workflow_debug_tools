@@ -748,11 +748,7 @@ namespace vl
 					}
 				}
 
-				if (envelope.command == L"hello")
-				{
-					return HandleHello(envelope);
-				}
-				if (envelope.command == L"initialize")
+if (envelope.command == L"initialize")
 				{
 					return HandleInitialize(envelope);
 				}
@@ -788,11 +784,7 @@ namespace vl
 				{
 					return HandleVariables(envelope);
 				}
-				if (envelope.command == L"exception")
-				{
-					return HandleException(envelope);
-				}
-				if (envelope.command == L"disconnect")
+if (envelope.command == L"disconnect")
 				{
 					return HandleDisconnect(envelope);
 				}
@@ -800,34 +792,11 @@ namespace vl
 				return false;
 			}
 
-			bool WorkflowDebugBridge::HandleHello(const WorkflowDebugEnvelope& envelope)
-			{
-				(void)envelope;
-				if (sourceCatalog)
-				{
-					sourceCatalog->Clear();
-				}
-				if (state)
-				{
-					state->SetPhase(WorkflowDebugSessionPhase::Negotiating);
-				}
-				return true;
-			}
-
-			bool WorkflowDebugBridge::HandleInitialize(const WorkflowDebugEnvelope& envelope)
+				bool WorkflowDebugBridge::HandleInitialize(const WorkflowDebugEnvelope& envelope)
 			{
 				auto body = ParseJsonObject(envelope.body);
 				if (body)
 				{
-					WString workspaceRoot;
-					if (TryReadStringField(body.Obj(), L"workspaceRoot", workspaceRoot))
-					{
-						if (state)
-						{
-							state->SetWorkspaceRoot(workspaceRoot);
-						}
-					}
-
 					bool stopOnEntry = true;
 					if (!TryReadOptionalBooleanField(body.Obj(), L"stopOnEntry", stopOnEntry))
 					{
@@ -1022,18 +991,7 @@ namespace vl
 				return SendResponse(envelope, state, transport, L"variables", body);
 			}
 
-			bool WorkflowDebugBridge::HandleException(const WorkflowDebugEnvelope& envelope)
-			{
-				(void)envelope;
-				if (state)
-				{
-					state->SetPhase(WorkflowDebugSessionPhase::Paused);
-					state->SetLastStopped(L"exception", -1, -1, -1, -1);
-				}
-				return true;
-			}
-
-			bool WorkflowDebugBridge::HandleDisconnect(const WorkflowDebugEnvelope& envelope)
+				bool WorkflowDebugBridge::HandleDisconnect(const WorkflowDebugEnvelope& envelope)
 			{
 				auto body = ParseJsonObject(envelope.body);
 				WString reason = L"disconnect";
@@ -1081,7 +1039,6 @@ namespace vl
 			{
 				if (state)
 				{
-					state->SetSourceMapCount(sourceMap.Count());
 					state->SetPhase(WorkflowDebugSessionPhase::Negotiating);
 				}
 				return SendEvent(state, transport, L"hello", BuildHelloBody(runtimeVersion, sourceMap));

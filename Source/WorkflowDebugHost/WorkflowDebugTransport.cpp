@@ -273,29 +273,25 @@ namespace vl
 			{
 				WString									host = L"127.0.0.1";
 				vint									port = 0;
-				bool									open = false;
-				bool									wsaStarted = false;
+bool									wsaStarted = false;
 				std::atomic<bool>						closing = false;
 				SOCKET									socketHandle = INVALID_SOCKET;
 				std::thread								receiveThread;
 				mutable std::mutex						stateMutex;
 				mutable std::mutex						queueMutex;
 				collections::List<WorkflowDebugEnvelope>	incoming;
-				collections::List<WorkflowDebugEnvelope>	outgoing;
-
-				void Clear()
+void Clear()
 				{
 					Close();
 					std::lock_guard<std::mutex> guard(queueMutex);
 					incoming.Clear();
-					outgoing.Clear();
 				}
 
 				bool IsOpen() const
-				{
-					std::lock_guard<std::mutex> guard(stateMutex);
-					return open;
-				}
+					{
+						std::lock_guard<std::mutex> guard(stateMutex);
+						return socketHandle != INVALID_SOCKET;
+					}
 
 				void SetEndpoint(const WString& valueHost, vint valuePort)
 				{
@@ -306,16 +302,7 @@ namespace vl
 					port = valuePort;
 				}
 
-				bool Open()
-				{
-					// 保留骨架阶段的内存队列行为，避免现有会话测试被打断。
-					Close();
-					std::lock_guard<std::mutex> guard(stateMutex);
-					open = true;
-					return true;
-				}
-
-				bool Connect()
+					bool Connect()
 				{
 					WString localHost;
 					vint localPort = 0;
@@ -394,7 +381,6 @@ namespace vl
 					{
 						std::lock_guard<std::mutex> guard(stateMutex);
 						socketHandle = connectedSocket;
-						open = true;
 					}
 
 					receiveThread = std::thread([this, connectedSocket]()
@@ -406,23 +392,14 @@ namespace vl
 
 				bool Send(const WorkflowDebugEnvelope& envelope)
 				{
-					{
-						std::lock_guard<std::mutex> guard(queueMutex);
-						outgoing.Add(envelope);
-					}
-
 					SOCKET socketToWrite = INVALID_SOCKET;
 					{
-						std::lock_guard<std::mutex> guard(stateMutex);
-						if (!open)
-						{
-							return false;
-						}
-						if (socketHandle == INVALID_SOCKET)
-						{
-							return !wsaStarted;
-						}
-						socketToWrite = socketHandle;
+							std::lock_guard<std::mutex> guard(stateMutex);
+							if (socketHandle == INVALID_SOCKET)
+							{
+								return false;
+							}
+							socketToWrite = socketHandle;
 					}
 
 					auto json = SerializeEnvelopeToJson(envelope);
@@ -448,26 +425,7 @@ namespace vl
 					return true;
 				}
 
-				bool TryPopOutgoing(WorkflowDebugEnvelope& envelope)
-				{
-					std::lock_guard<std::mutex> guard(queueMutex);
-					if (outgoing.Count() == 0)
-					{
-						return false;
-					}
-
-					envelope = outgoing[0];
-					outgoing.RemoveAt(0);
-					return true;
-				}
-
-				void QueueIncoming(const WorkflowDebugEnvelope& envelope)
-				{
-					std::lock_guard<std::mutex> guard(queueMutex);
-					incoming.Add(envelope);
-				}
-
-				void Close()
+					void Close()
 				{
 					closing = true;
 
@@ -476,7 +434,6 @@ namespace vl
 						std::lock_guard<std::mutex> guard(stateMutex);
 						socketToClose = socketHandle;
 						socketHandle = INVALID_SOCKET;
-						open = false;
 					}
 
 					if (socketToClose != INVALID_SOCKET)
@@ -555,7 +512,6 @@ namespace vl
 						if (socketHandle == socketToRead)
 						{
 							socketHandle = INVALID_SOCKET;
-							open = false;
 							shouldClose = true;
 						}
 					}
@@ -603,49 +559,33 @@ namespace vl
 				std::lock_guard<std::mutex> guard(impl->stateMutex);
 				return impl->port;
 			}
+					bool WorkflowDebugTransport::Connect()
+					{
+						return impl->Connect();
+					}
 
-			bool WorkflowDebugTransport::Open()
-			{
-				return impl->Open();
-			}
+					bool WorkflowDebugTransport::Connect(const WString& host, vint port)
+					{
+						SetEndpoint(host, port);
+						return Connect();
+					}
 
-			bool WorkflowDebugTransport::Connect()
-			{
-				return impl->Connect();
-			}
+					void WorkflowDebugTransport::Close()
+					{
+						impl->Close();
+					}
 
-			bool WorkflowDebugTransport::Connect(const WString& host, vint port)
-			{
-				SetEndpoint(host, port);
-				return Connect();
-			}
+					bool WorkflowDebugTransport::Send(const WorkflowDebugEnvelope& envelope)
+					{
+						return impl->Send(envelope);
+					}
 
-			void WorkflowDebugTransport::Close()
-			{
-				impl->Close();
-			}
-
-			bool WorkflowDebugTransport::Send(const WorkflowDebugEnvelope& envelope)
-			{
-				return impl->Send(envelope);
-			}
-
-			bool WorkflowDebugTransport::TryReceive(WorkflowDebugEnvelope& envelope)
-			{
-				return impl->TryReceive(envelope);
-			}
-
-			bool WorkflowDebugTransport::TryPopOutgoing(WorkflowDebugEnvelope& envelope)
-			{
-				return impl->TryPopOutgoing(envelope);
-			}
-
-			void WorkflowDebugTransport::QueueIncoming(const WorkflowDebugEnvelope& envelope)
-			{
-				impl->QueueIncoming(envelope);
+					bool WorkflowDebugTransport::TryReceive(WorkflowDebugEnvelope& envelope)
+					{
+						return impl->TryReceive(envelope);
+					}
 			}
 		}
 	}
-}
 
 #endif

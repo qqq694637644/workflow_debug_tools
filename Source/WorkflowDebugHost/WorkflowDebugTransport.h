@@ -21,9 +21,9 @@ namespace vl
 		namespace debughost
 		{
 			/// <summary>
-			/// 传输层默认保留内存队列模式，便于骨架阶段和单元测试使用。
-			/// 当调用 Connect() 时，会切换为真正的 TCP 客户端并按行发送 JSON 消息。
-			/// </summary>
+					/// TCP 传输层：宿主作为客户端连接到调试适配器，并按行发送/接收 JSON envelope。
+					/// 仅保留远程调试主流程所需的最小语义，不再支持内存队列模式。
+					/// </summary>
 			class WorkflowDebugTransport : public Object
 			{
 			public:
@@ -36,18 +36,13 @@ namespace vl
 				void								SetEndpoint(const WString& host, vint port);
 				WString								GetEndpointHost() const;
 				vint								GetEndpointPort() const;
-
-				bool								Open();
-				bool								Connect();
+bool								Connect();
 				bool								Connect(const WString& host, vint port);
 				void								Close();
 
 				bool								Send(const WorkflowDebugEnvelope& envelope);
 				bool								TryReceive(WorkflowDebugEnvelope& envelope);
-				bool								TryPopOutgoing(WorkflowDebugEnvelope& envelope);
-				void								QueueIncoming(const WorkflowDebugEnvelope& envelope);
-
-			private:
+private:
 				struct WorkflowDebugTransportImpl;
 				std::unique_ptr<WorkflowDebugTransportImpl>	impl;
 			};

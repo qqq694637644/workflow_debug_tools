@@ -40,9 +40,6 @@ namespace vl
 				WorkflowDebugSessionPhase	phase = WorkflowDebugSessionPhase::Idle;
 				vint						lastInboundSeq = 0;
 				vint						lastOutboundSeq = 0;
-				vint						pendingRequestCount = 0;
-				WString						workspaceRoot;
-				vint						sourceMapCount = 0;
 				WString						lastStoppedReason;
 				vint						lastStoppedThreadId = -1;
 				vint						lastStoppedFrameId = -1;
@@ -66,11 +63,7 @@ namespace vl
 				void								SetPhase(WorkflowDebugSessionPhase phase);
 				WorkflowDebugSessionPhase			GetPhase() const;
 
-				void								SetWorkspaceRoot(const WString& workspaceRoot);
-				const WString&						GetWorkspaceRoot() const;
 
-				void								SetSourceMapCount(vint count);
-				vint								GetSourceMapCount() const;
 
 				void								SetLastInboundSeq(vint seq);
 				vint								GetLastInboundSeq() const;
@@ -78,9 +71,6 @@ namespace vl
 				void								SetLastOutboundSeq(vint seq);
 				vint								GetLastOutboundSeq() const;
 
-				void								IncrementPendingRequestCount();
-				void								DecrementPendingRequestCount();
-				vint								GetPendingRequestCount() const;
 
 				void								SetLastStopped(const WString& reason, vint threadId, vint frameId, vint sourceId, vint row);
 				void								ClearLastStopped();
@@ -91,11 +81,8 @@ namespace vl
 				mutable std::mutex				mutex;
 				WString								sessionId;
 				WorkflowDebugSessionPhase			phase = WorkflowDebugSessionPhase::Idle;
-				WString								workspaceRoot;
-				vint								sourceMapCount = 0;
 				vint								lastInboundSeq = 0;
 				vint								lastOutboundSeq = 0;
-				vint								pendingRequestCount = 0;
 				WString								lastStoppedReason;
 				vint								lastStoppedThreadId = -1;
 				vint								lastStoppedFrameId = -1;

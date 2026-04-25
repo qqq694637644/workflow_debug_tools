@@ -75,49 +75,43 @@ namespace vl
 				{
 					runtimeBinding->SetAssembly(assembly);
 				}
-				if (transport->GetEndpointPort() > 0)
+				CHECK_ERROR(transport->GetEndpointPort() > 0, L"必须指定调试适配器端口。");
+				CHECK_ERROR(transport->Connect(), L"无法连接到调试适配器。");
+				dispatchLoopRunning = true;
+				dispatchThread = std::thread([this]()
 				{
-					CHECK_ERROR(transport->Connect(), L"无法连接到调试适配器。");
-					dispatchLoopRunning = true;
-					dispatchThread = std::thread([this]()
+					WorkflowDebugEnvelope envelope;
+					while (dispatchLoopRunning)
 					{
-						WorkflowDebugEnvelope envelope;
-						while (dispatchLoopRunning)
+						bool received = false;
+						while (transport && transport->TryReceive(envelope))
 						{
-							bool received = false;
-							while (transport && transport->TryReceive(envelope))
-							{
-								received = true;
-								Dispatch(envelope);
-								if (!dispatchLoopRunning)
-								{
-									break;
-								}
-							}
-
+							received = true;
+							Dispatch(envelope);
 							if (!dispatchLoopRunning)
 							{
 								break;
 							}
-
-							if (!transport || !transport->IsOpen())
-							{
-								break;
-							}
-
-							if (!received)
-							{
-								std::this_thread::sleep_for(std::chrono::milliseconds(1));
-							}
 						}
 
-						dispatchLoopRunning = false;
-					});
-				}
-				else
-				{
-					transport->Open();
-				}
+						if (!dispatchLoopRunning)
+						{
+							break;
+						}
+
+						if (!transport || !transport->IsOpen())
+						{
+							break;
+						}
+
+						if (!received)
+						{
+							std::this_thread::sleep_for(std::chrono::milliseconds(1));
+						}
+					}
+
+					dispatchLoopRunning = false;
+				});
 			}
 
 			void WorkflowDebugSession::Detach()
@@ -179,10 +173,6 @@ namespace vl
 				for (auto source : sourceMap)
 				{
 					sourceCatalog->RegisterSource(source.codeIndex, source.sourcePath, source.row);
-				}
-				if (state)
-				{
-					state->SetSourceMapCount(sourceMap.Count());
 				}
 
 				return bridge->NotifyHello(runtimeVersion, sourceMap);

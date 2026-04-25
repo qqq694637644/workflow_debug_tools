@@ -282,11 +282,7 @@ export class WorkflowDebugDapServer {
     traceDebugMessage('dapServer', `开始 attach，监听 ${endpoint.host}:${endpoint.port}，等待宿主连接。`);
     this.transport = new BridgeTransport<ProtocolEnvelope>({
       name: 'workflow-debug-dap',
-      mode: 'server',
-      endpoint,
-      reconnect: {
-        enabled: false
-      }
+      endpoint
     });
     this.installTransportHandlers(this.transport);
     await this.transport.listen();

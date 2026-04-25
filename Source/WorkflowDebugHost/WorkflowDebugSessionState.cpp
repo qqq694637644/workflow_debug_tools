@@ -30,11 +30,8 @@ namespace vl
 				std::lock_guard<std::mutex> guard(mutex);
 				sessionId = WString();
 				phase = WorkflowDebugSessionPhase::Idle;
-				workspaceRoot = WString();
-				sourceMapCount = 0;
 				lastInboundSeq = 0;
 				lastOutboundSeq = 0;
-				pendingRequestCount = 0;
 				lastStoppedReason = WString();
 				lastStoppedThreadId = -1;
 				lastStoppedFrameId = -1;
@@ -48,11 +45,8 @@ namespace vl
 				std::lock_guard<std::mutex> guard(mutex);
 				sessionId = value;
 				phase = WorkflowDebugSessionPhase::Connected;
-				workspaceRoot = WString();
-				sourceMapCount = 0;
 				lastInboundSeq = 0;
 				lastOutboundSeq = 0;
-				pendingRequestCount = 0;
 				lastStoppedReason = WString();
 				lastStoppedThreadId = -1;
 				lastStoppedFrameId = -1;
@@ -64,7 +58,6 @@ namespace vl
 			{
 				std::lock_guard<std::mutex> guard(mutex);
 				phase = WorkflowDebugSessionPhase::Closed;
-				pendingRequestCount = 0;
 				lastStoppedReason = WString();
 				lastStoppedThreadId = -1;
 				lastStoppedFrameId = -1;
@@ -82,31 +75,6 @@ namespace vl
 			{
 				std::lock_guard<std::mutex> guard(mutex);
 				return phase;
-			}
-
-			void WorkflowDebugSessionState::SetWorkspaceRoot(const WString& value)
-			{
-				std::lock_guard<std::mutex> guard(mutex);
-				workspaceRoot = value;
-			}
-
-			const WString& WorkflowDebugSessionState::GetWorkspaceRoot() const
-			{
-				std::lock_guard<std::mutex> guard(mutex);
-				return workspaceRoot;
-			}
-
-			void WorkflowDebugSessionState::SetSourceMapCount(vint value)
-			{
-				CHECK_ERROR(value >= 0, L"sourceMapCount 不能为负数。");
-				std::lock_guard<std::mutex> guard(mutex);
-				sourceMapCount = value;
-			}
-
-			vint WorkflowDebugSessionState::GetSourceMapCount() const
-			{
-				std::lock_guard<std::mutex> guard(mutex);
-				return sourceMapCount;
 			}
 
 			void WorkflowDebugSessionState::SetLastInboundSeq(vint seq)
@@ -133,25 +101,6 @@ namespace vl
 			{
 				std::lock_guard<std::mutex> guard(mutex);
 				return lastOutboundSeq;
-			}
-
-			void WorkflowDebugSessionState::IncrementPendingRequestCount()
-			{
-				std::lock_guard<std::mutex> guard(mutex);
-				pendingRequestCount += 1;
-			}
-
-			void WorkflowDebugSessionState::DecrementPendingRequestCount()
-			{
-				std::lock_guard<std::mutex> guard(mutex);
-				CHECK_ERROR(pendingRequestCount > 0, L"没有待处理请求可减少。");
-				pendingRequestCount -= 1;
-			}
-
-			vint WorkflowDebugSessionState::GetPendingRequestCount() const
-			{
-				std::lock_guard<std::mutex> guard(mutex);
-				return pendingRequestCount;
 			}
 
 			void WorkflowDebugSessionState::SetLastStopped(const WString& reason, vint threadId, vint frameId, vint sourceId, vint row)
@@ -182,9 +131,6 @@ namespace vl
 				snapshot.phase = phase;
 				snapshot.lastInboundSeq = lastInboundSeq;
 				snapshot.lastOutboundSeq = lastOutboundSeq;
-				snapshot.pendingRequestCount = pendingRequestCount;
-				snapshot.workspaceRoot = workspaceRoot;
-				snapshot.sourceMapCount = sourceMapCount;
 				snapshot.lastStoppedReason = lastStoppedReason;
 				snapshot.lastStoppedThreadId = lastStoppedThreadId;
 				snapshot.lastStoppedFrameId = lastStoppedFrameId;

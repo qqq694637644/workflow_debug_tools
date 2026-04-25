@@ -58,7 +58,6 @@ namespace vl
 				bool								NotifyException(const WString& message, bool fatal);
 
 			private:
-				bool								HandleHello(const WorkflowDebugEnvelope& envelope);
 				bool								HandleInitialize(const WorkflowDebugEnvelope& envelope);
 				bool								HandleSetBreakpoints(const WorkflowDebugEnvelope& envelope);
 				bool								HandleContinue(const WorkflowDebugEnvelope& envelope);
@@ -68,7 +67,6 @@ namespace vl
 				bool								HandleStackTrace(const WorkflowDebugEnvelope& envelope);
 				bool								HandleScopes(const WorkflowDebugEnvelope& envelope);
 				bool								HandleVariables(const WorkflowDebugEnvelope& envelope);
-				bool								HandleException(const WorkflowDebugEnvelope& envelope);
 				bool								HandleDisconnect(const WorkflowDebugEnvelope& envelope);
 				bool								NotifyBreakpointValidated(const WString& breakpointId, bool verified, const WString& reason, vint replyTo);
 

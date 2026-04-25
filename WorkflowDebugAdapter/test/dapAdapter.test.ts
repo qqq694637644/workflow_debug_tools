@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import net from 'node:net';
+import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import {
-  BridgeTransport,
+  LineFramedJsonCodec,
   DEFAULT_CAPABILITIES,
   TargetSessionMachine,
   type RequestEnvelope,
@@ -397,7 +398,6 @@ class DapClient {
 }
 
 async function startFakeHost(port: number): Promise<{
-  readonly transport: BridgeTransport<ProtocolEnvelope>;
   readonly runtimeControl: RecordingRuntimeControl;
   readonly disconnectRequests: Array<{ readonly reason: string; readonly restart: boolean }>;
   notifyDisconnect(reason?: string, restart?: boolean): Promise<void>;
@@ -414,158 +414,177 @@ async function startFakeHost(port: number): Promise<{
   const sessionId = 'wf-vscode-plugin';
   target.attach(sessionId);
 
-  const transport = new BridgeTransport<ProtocolEnvelope>({
-    name: 'fake-workflow-host',
-    mode: 'client',
-    endpoint: {
-      host: '127.0.0.1',
-      port
-    },
-    reconnect: {
-      enabled: false
+  const socket = net.createConnection(port, '127.0.0.1');
+  await once(socket, 'connect');
+
+  const codec = new LineFramedJsonCodec<ProtocolEnvelope>();
+
+  const sendEnvelope = async (envelope: ProtocolEnvelope): Promise<void> => {
+    if (socket.destroyed) {
+      throw new Error('宿主连接已关闭。');
+    }
+
+    if (!socket.write(codec.encode(envelope), 'utf8')) {
+      await once(socket, 'drain');
+    }
+  };
+
+  socket.on('data', (chunk) => {
+    let messages: Array<ProtocolEnvelope> = [];
+    try {
+      messages = codec.push(chunk);
+    } catch (error) {
+      console.error(error);
+      socket.destroy();
+      return;
+    }
+
+    for (const message of messages) {
+      void (async () => {
+        if (message.type === 'request' && message.cmd === 'initialize') {
+          const initializeRequest = message as RequestEnvelope<'initialize'>;
+          assert.equal(initializeRequest.body.stopOnEntry, true);
+          const ready = target.receiveInitialize(initializeRequest);
+          await sendEnvelope(ready);
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'setBreakpoints') {
+          const setBreakpointsRequest = message as RequestEnvelope<'setBreakpoints'>;
+          const validations = target.receiveSetBreakpoints(setBreakpointsRequest);
+          for (const validation of validations) {
+            await sendEnvelope(validation);
+          }
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'continue') {
+          const continueRequest = message as RequestEnvelope<'continue'>;
+          target.onContinue(continueRequest);
+          const stopped = target.handleExecutionPoint({
+            threadId: 1,
+            frameId: 2,
+            sourceId: 12,
+            row: 9,
+            functionName: 'RaiseException',
+            sourcePath: remotePath,
+            stackFrames: createStackFrames(0)
+          });
+          if (stopped) {
+            await sendEnvelope(stopped);
+          }
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'next') {
+          const nextRequest = message as RequestEnvelope<'next'>;
+          target.onStep(nextRequest);
+          const stopped = target.handleExecutionPoint({
+            threadId: 1,
+            frameId: 2,
+            sourceId: 12,
+            row: 10,
+            functionName: 'RaiseException',
+            sourcePath: remotePath,
+            stackFrames: createStackFrames(1)
+          });
+          if (stopped) {
+            await sendEnvelope(stopped);
+          }
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'stepIn') {
+          const stepInRequest = message as RequestEnvelope<'stepIn'>;
+          target.onStep(stepInRequest);
+          const stopped = target.handleExecutionPoint({
+            threadId: 1,
+            frameId: 2,
+            sourceId: 12,
+            row: 10,
+            functionName: 'RaiseException',
+            sourcePath: remotePath,
+            stackFrames: createStackFrames(1)
+          });
+          if (stopped) {
+            await sendEnvelope(stopped);
+          }
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'stepOut') {
+          const stepOutRequest = message as RequestEnvelope<'stepOut'>;
+          target.onStep(stepOutRequest);
+          const stopped = target.handleExecutionPoint({
+            threadId: 1,
+            frameId: 1,
+            sourceId: 12,
+            row: 10,
+            functionName: 'Update',
+            sourcePath: remotePath,
+            stackFrames: createStackFrames(0).slice(0, 2)
+          });
+          if (stopped) {
+            await sendEnvelope(stopped);
+          }
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'stackTrace') {
+          const stackTraceRequest = message as RequestEnvelope<'stackTrace'>;
+          const response = target.receiveStackTrace(stackTraceRequest);
+          await sendEnvelope(response);
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'scopes') {
+          const scopesRequest = message as RequestEnvelope<'scopes'>;
+          const response = target.receiveScopes(scopesRequest);
+          await sendEnvelope(response);
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'variables') {
+          const variablesRequest = message as RequestEnvelope<'variables'>;
+          const response = target.receiveVariables(variablesRequest);
+          await sendEnvelope(response);
+          return;
+        }
+
+        if (message.type === 'request' && message.cmd === 'disconnect') {
+          const disconnectRequest = message as RequestEnvelope<'disconnect'>;
+          disconnectRequests.push({
+            reason: disconnectRequest.body.reason,
+            restart: disconnectRequest.body.restart
+          });
+        }
+      })().catch((error) => {
+        console.error(error);
+      });
     }
   });
 
-  transport.onMessage((message) => {
-    void (async () => {
-      if (message.type === 'request' && message.cmd === 'initialize') {
-        const initializeRequest = message as RequestEnvelope<'initialize'>;
-        assert.equal(initializeRequest.body.stopOnEntry, true);
-        const ready = target.receiveInitialize(initializeRequest);
-        await transport.send(ready);
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'setBreakpoints') {
-        const setBreakpointsRequest = message as RequestEnvelope<'setBreakpoints'>;
-        const validations = target.receiveSetBreakpoints(setBreakpointsRequest);
-        for (const validation of validations) {
-          await transport.send(validation);
-        }
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'continue') {
-        const continueRequest = message as RequestEnvelope<'continue'>;
-        target.onContinue(continueRequest);
-        const stopped = target.handleExecutionPoint({
-          threadId: 1,
-          frameId: 2,
-          sourceId: 12,
-          row: 9,
-          functionName: 'RaiseException',
-          sourcePath: remotePath,
-          stackFrames: createStackFrames(0)
-        });
-        if (stopped) {
-          await transport.send(stopped);
-        }
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'next') {
-        const nextRequest = message as RequestEnvelope<'next'>;
-        target.onStep(nextRequest);
-        const stopped = target.handleExecutionPoint({
-          threadId: 1,
-          frameId: 2,
-          sourceId: 12,
-          row: 10,
-          functionName: 'RaiseException',
-          sourcePath: remotePath,
-          stackFrames: createStackFrames(1)
-        });
-        if (stopped) {
-          await transport.send(stopped);
-        }
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'stepIn') {
-        const stepInRequest = message as RequestEnvelope<'stepIn'>;
-        target.onStep(stepInRequest);
-        const stopped = target.handleExecutionPoint({
-          threadId: 1,
-          frameId: 2,
-          sourceId: 12,
-          row: 10,
-          functionName: 'RaiseException',
-          sourcePath: remotePath,
-          stackFrames: createStackFrames(1)
-        });
-        if (stopped) {
-          await transport.send(stopped);
-        }
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'stepOut') {
-        const stepOutRequest = message as RequestEnvelope<'stepOut'>;
-        target.onStep(stepOutRequest);
-        const stopped = target.handleExecutionPoint({
-          threadId: 1,
-          frameId: 1,
-          sourceId: 12,
-          row: 10,
-          functionName: 'Update',
-          sourcePath: remotePath,
-          stackFrames: createStackFrames(0).slice(0, 2)
-        });
-        if (stopped) {
-          await transport.send(stopped);
-        }
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'stackTrace') {
-        const stackTraceRequest = message as RequestEnvelope<'stackTrace'>;
-        const response = target.receiveStackTrace(stackTraceRequest);
-        await transport.send(response);
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'scopes') {
-        const scopesRequest = message as RequestEnvelope<'scopes'>;
-        const response = target.receiveScopes(scopesRequest);
-        await transport.send(response);
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'variables') {
-        const variablesRequest = message as RequestEnvelope<'variables'>;
-        const response = target.receiveVariables(variablesRequest);
-        await transport.send(response);
-        return;
-      }
-
-      if (message.type === 'request' && message.cmd === 'disconnect') {
-        const disconnectRequest = message as RequestEnvelope<'disconnect'>;
-        disconnectRequests.push({
-          reason: disconnectRequest.body.reason,
-          restart: disconnectRequest.body.restart
-        });
-      }
-    })().catch((error) => {
-      console.error(error);
-    });
-  });
-
-  await transport.connect();
   const hello = target.createHello();
-  await transport.send(hello);
+  await sendEnvelope(hello);
 
   return {
-    transport,
     runtimeControl,
     disconnectRequests,
     async notifyDisconnect(reason = '会话关闭', restart = false): Promise<void> {
-      await transport.send(createEventEnvelope(hello.sessionId, 'disconnect', {
+      await sendEnvelope(createEventEnvelope(hello.sessionId, 'disconnect', {
         reason,
         restart
       }, Date.now()));
     },
     async close(): Promise<void> {
-      await transport.close();
+      if (socket.destroyed) {
+        return;
+      }
+
+      const closePromise = once(socket, 'close').catch(() => undefined);
+      socket.end();
+      socket.destroy();
+      await closePromise;
     }
   };
 }

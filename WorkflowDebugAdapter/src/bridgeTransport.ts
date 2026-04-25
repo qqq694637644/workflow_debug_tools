@@ -1,23 +1,12 @@
 import net, { type AddressInfo, type Server, type Socket } from 'node:net';
-import { StringDecoder } from 'node:string_decoder';
 import { once } from 'node:events';
+import { StringDecoder } from 'node:string_decoder';
 
-export type BridgeTransportMode = 'client' | 'server';
+// 设计取舍：
+// - Adapter 端只需要「listen -> accept 单连接 -> 收发消息 -> close」的最小闭环。
+// - 删除 client/reconnect 等扩展点，避免隐式重连导致的状态回滚与错误面扩大。
 
-export type BridgeTransportState =
-  | 'idle'
-  | 'listening'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'closing'
-  | 'closed';
-
-export interface BridgeTransportReconnectOptions {
-  readonly enabled: boolean;
-  readonly delayMs: number;
-  readonly maxAttempts: number;
-}
+export type BridgeTransportState = 'idle' | 'listening' | 'connected' | 'closed';
 
 export interface BridgeTransportEndpoint {
   readonly host: string;
@@ -26,21 +15,17 @@ export interface BridgeTransportEndpoint {
 
 export interface BridgeTransportOptions<TMessage> {
   readonly name: string;
-  readonly mode: BridgeTransportMode;
   readonly endpoint: BridgeTransportEndpoint;
-  readonly reconnect?: Partial<BridgeTransportReconnectOptions>;
   readonly serialize?: (message: TMessage) => string;
   readonly deserialize?: (line: string) => TMessage;
 }
 
 export interface BridgeTransportSnapshot {
   readonly name: string;
-  readonly mode: BridgeTransportMode;
   readonly state: BridgeTransportState;
   readonly endpoint: BridgeTransportEndpoint;
   readonly localAddress: AddressInfo | null;
   readonly remoteAddress: string | null;
-  readonly reconnectAttempts: number;
 }
 
 export class BridgeTransportError extends Error {
@@ -66,14 +51,6 @@ function emit<T>(listeners: ReadonlyArray<Listener<T>>, value: T): void {
   for (const listener of [...listeners]) {
     listener(value);
   }
-}
-
-function normalizeReconnectOptions(options?: Partial<BridgeTransportReconnectOptions>): BridgeTransportReconnectOptions {
-  return {
-    enabled: options?.enabled ?? false,
-    delayMs: options?.delayMs ?? 250,
-    maxAttempts: options?.maxAttempts ?? Number.POSITIVE_INFINITY
-  };
 }
 
 export class LineFramedJsonCodec<TMessage> {
@@ -141,30 +118,24 @@ export class LineFramedJsonCodec<TMessage> {
 
 export class BridgeTransport<TMessage> {
   private readonly name: string;
-  private readonly mode: BridgeTransportMode;
   private readonly endpoint: BridgeTransportEndpoint;
-  private readonly reconnectOptions: BridgeTransportReconnectOptions;
   private readonly codec: LineFramedJsonCodec<TMessage>;
   private readonly messageListeners: Array<Listener<TMessage>> = [];
   private readonly openListeners: Array<Listener<void>> = [];
   private readonly closeListeners: Array<Listener<void>> = [];
   private readonly errorListeners: Array<Listener<Error>> = [];
+
   private state: BridgeTransportState = 'idle';
   private socket: Socket | null = null;
   private server: Server | null = null;
   private localAddress: AddressInfo | null = null;
   private remoteAddress: string | null = null;
-  private reconnectAttempts = 0;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-  private manualClose = false;
-  private connectPromise: Promise<void> | null = null;
   private listenPromise: Promise<void> | null = null;
+  private closeEmitted = false;
 
   constructor(options: BridgeTransportOptions<TMessage>) {
     this.name = options.name;
-    this.mode = options.mode;
     this.endpoint = options.endpoint;
-    this.reconnectOptions = normalizeReconnectOptions(options.reconnect);
     this.codec = new LineFramedJsonCodec<TMessage>(options.serialize, options.deserialize);
   }
 
@@ -175,12 +146,10 @@ export class BridgeTransport<TMessage> {
   public snapshot(): BridgeTransportSnapshot {
     return {
       name: this.name,
-      mode: this.mode,
       state: this.state,
       endpoint: this.endpoint,
       localAddress: this.localAddress,
-      remoteAddress: this.remoteAddress,
-      reconnectAttempts: this.reconnectAttempts
+      remoteAddress: this.remoteAddress
     };
   }
 
@@ -200,47 +169,53 @@ export class BridgeTransport<TMessage> {
     return addListener(this.errorListeners, listener);
   }
 
-  public async connect(): Promise<void> {
-    if (this.mode !== 'client') {
-      throw new BridgeTransportError('只有客户端模式才能调用 connect()。');
-    }
-
-    if (this.connectPromise) {
-      return this.connectPromise;
-    }
-
-    this.manualClose = false;
-    this.state = 'connecting';
-    this.connectPromise = this.openClientSocket();
-    try {
-      await this.connectPromise;
-    } finally {
-      this.connectPromise = null;
-    }
-  }
-
   public async listen(): Promise<void> {
-    if (this.mode !== 'server') {
-      throw new BridgeTransportError('只有服务端模式才能调用 listen()。');
+    if (this.state === 'closed') {
+      throw new BridgeTransportError('传输层已关闭，不能再次 listen。');
+    }
+
+    if (this.state !== 'idle') {
+      return;
     }
 
     if (this.listenPromise) {
       return this.listenPromise;
     }
 
-    this.manualClose = false;
     this.state = 'listening';
+
     this.listenPromise = new Promise<void>((resolve, reject) => {
       const server = net.createServer((socket) => {
-        this.attachSocket(socket, true);
-      });
-      this.server = server;
-      server.once('error', (error) => {
-        if (this.state !== 'closed') {
-          this.emitError(this.asError(error));
+        // 单连接策略：只接受第一个连接，其余直接丢弃。
+        if (this.state === 'closed') {
+          socket.destroy();
+          return;
         }
-        reject(this.asError(error));
+
+        if (this.socket) {
+          socket.destroy();
+          return;
+        }
+
+        this.attachSocket(socket);
+
+        // 已接入连接后不再接受更多连接。
+        this.server = null;
+        if (server.listening) {
+          server.close();
+        }
       });
+
+      this.server = server;
+
+      server.once('error', (error) => {
+        const wrapped = this.asError(error);
+        if (this.state !== 'closed') {
+          this.emitError(wrapped);
+        }
+        reject(wrapped);
+      });
+
       server.listen(this.endpoint.port, this.endpoint.host, () => {
         const address = server.address();
         this.localAddress = typeof address === 'object' && address ? (address as AddressInfo) : null;
@@ -252,32 +227,6 @@ export class BridgeTransport<TMessage> {
       await this.listenPromise;
     } finally {
       this.listenPromise = null;
-    }
-  }
-
-  public async reconnect(): Promise<void> {
-    if (this.mode !== 'client') {
-      throw new BridgeTransportError('只有客户端模式支持 reconnect()。');
-    }
-
-    this.clearReconnectTimer();
-    const socket = this.socket;
-    this.manualClose = true;
-
-    if (socket && !socket.destroyed) {
-      socket.end();
-      socket.destroy();
-      await once(socket, 'close');
-    }
-
-    this.manualClose = false;
-    this.state = 'reconnecting';
-    this.reconnectAttempts = 0;
-    this.connectPromise = this.openClientSocket();
-    try {
-      await this.connectPromise;
-    } finally {
-      this.connectPromise = null;
     }
   }
 
@@ -294,13 +243,12 @@ export class BridgeTransport<TMessage> {
   }
 
   public async close(): Promise<void> {
-    this.manualClose = true;
-    this.clearReconnectTimer();
-    this.state = 'closing';
+    if (this.state === 'closed') {
+      return;
+    }
 
     const socket = this.socket;
     const server = this.server;
-    const hadSocket = socket !== null;
 
     this.socket = null;
     this.server = null;
@@ -310,173 +258,80 @@ export class BridgeTransport<TMessage> {
       socket.end();
       socket.destroy();
     }
-
     if (server) {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(this.asError(error));
-            return;
+      if (server.listening) {
+        await new Promise<void>((resolve, reject) => {
+          try {
+            server.close((error) => {
+              if (error) {
+                reject(this.asError(error));
+                return;
+              }
+              resolve();
+            });
+          } catch {
+            resolve();
           }
-          resolve();
         });
-      });
+      }
     }
 
     this.codec.reset();
     this.state = 'closed';
-
-    // 没有活动套接字时，close() 需要主动通知上层；有套接字时则交给 close 事件回调统一触发。
-    if (!hadSocket) {
-      emit(this.closeListeners, undefined);
-    }
+    this.emitCloseOnce();
   }
 
-  private async openClientSocket(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const socket = net.createConnection(this.endpoint.port, this.endpoint.host);
-      let settled = false;
-
-      this.attachSocket(socket);
-
-      const fail = (error: Error): void => {
-        if (settled) {
-          this.emitError(error);
-          return;
-        }
-
-        settled = true;
-        this.socket = null;
-        this.remoteAddress = null;
-        this.codec.reset();
-        socket.destroy();
-        this.state = 'closed';
-        reject(error);
-      };
-
-      socket.once('connect', () => {
-        settled = true;
-        this.state = 'connected';
-        this.remoteAddress = this.formatRemoteAddress(socket);
-        this.reconnectAttempts = 0;
-        emit(this.openListeners, undefined);
-        resolve();
-      });
-
-      socket.once('error', (error) => {
-        fail(this.asError(error));
-      });
-    });
-  }
-
-  private attachSocket(socket: Socket, emitOpen = false): void {
+  private attachSocket(socket: Socket): void {
     this.socket = socket;
+    this.codec.reset();
+    this.state = 'connected';
     this.remoteAddress = this.formatRemoteAddress(socket);
-    socket.setEncoding('utf8');
-    socket.on('data', (chunk: string | Buffer) => {
+    emit(this.openListeners, undefined);
+
+    socket.on('data', (chunk) => {
       try {
-        const messages = this.codec.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk));
+        const messages = this.codec.push(chunk);
         for (const message of messages) {
           emit(this.messageListeners, message);
         }
       } catch (error) {
-        this.emitError(this.asError(error));
+        const wrapped = this.asError(error);
+        this.emitError(wrapped);
+        socket.destroy();
       }
     });
+
     socket.once('close', () => {
-      this.handleSocketClose();
+      // close 事件可能由远端断开或本地 close() 触发。
+      this.socket = null;
+      this.remoteAddress = null;
+      this.codec.reset();
+      this.state = 'closed';
+      this.emitCloseOnce();
     });
-    socket.once('error', (error) => {
+
+    socket.on('error', (error) => {
       this.emitError(this.asError(error));
     });
-    if (emitOpen) {
-      this.state = 'connected';
-      this.reconnectAttempts = 0;
-      emit(this.openListeners, undefined);
-    }
   }
 
-  private handleSocketClose(): void {
-    this.codec.reset();
-    this.socket = null;
-    this.remoteAddress = null;
+  private emitCloseOnce(): void {
+    if (this.closeEmitted) {
+      return;
+    }
+
+    this.closeEmitted = true;
     emit(this.closeListeners, undefined);
-
-    if (this.manualClose) {
-      this.state = 'closed';
-      return;
-    }
-
-    if (this.mode === 'server' && this.server) {
-      this.state = 'listening';
-      return;
-    }
-
-    this.state = this.reconnectOptions.enabled ? 'reconnecting' : 'closed';
-    if (!this.reconnectOptions.enabled) {
-      return;
-    }
-
-    this.reconnectAttempts += 1;
-    if (this.reconnectAttempts > this.reconnectOptions.maxAttempts) {
-      this.state = 'closed';
-      this.emitError(new BridgeTransportError(`重连次数超过上限：${this.reconnectOptions.maxAttempts}。`));
-      return;
-    }
-
-    this.clearReconnectTimer();
-    this.reconnectTimer = setTimeout(() => {
-      void this.openClientSocket().catch((error) => {
-        this.emitError(error);
-        this.handleReconnectFailure();
-      });
-    }, this.reconnectOptions.delayMs);
   }
 
-  private handleReconnectFailure(): void {
-    if (this.manualClose || this.state === 'closed') {
-      return;
-    }
-
-    if (!this.reconnectOptions.enabled) {
-      this.state = 'closed';
-      return;
-    }
-
-    if (this.reconnectAttempts >= this.reconnectOptions.maxAttempts) {
-      this.state = 'closed';
-      return;
-    }
-
-    this.reconnectAttempts += 1;
-    this.clearReconnectTimer();
-    this.reconnectTimer = setTimeout(() => {
-      void this.openClientSocket().catch((error) => {
-        this.emitError(error);
-        this.handleReconnectFailure();
-      });
-    }, this.reconnectOptions.delayMs);
-  }
-
-  private clearReconnectTimer(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
+  private formatRemoteAddress(socket: Socket): string {
+    const remoteAddress = socket.remoteAddress ?? '';
+    const remotePort = socket.remotePort ?? 0;
+    return `${remoteAddress}:${remotePort}`;
   }
 
   private emitError(error: Error): void {
     emit(this.errorListeners, error);
-  }
-
-  private formatRemoteAddress(socket: Socket): string | null {
-    const address = socket.remoteAddress;
-    const port = socket.remotePort;
-    if (!address || !port) {
-      return null;
-    }
-
-    return `${address}:${port}`;
   }
 
   private asError(error: unknown): Error {
