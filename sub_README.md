@@ -20,3 +20,11 @@ vscode调试配置
   ]
 }
 
+
+
+
+  npm run build
+  npx @vscode/vsce package --allow-missing-repository
+  code --install-extension workflow-debug-adapter-0.1.2.vsix
+
+
