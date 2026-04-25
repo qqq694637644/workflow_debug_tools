@@ -1455,7 +1455,8 @@ TEST_FILE
 		TEST_ASSERT(serverSucceeded.load() == true);
 		TEST_ASSERT(ContainsSubstring(outputLine, L"\"type\":\"event\""));
 		TEST_ASSERT(ContainsSubstring(outputLine, L"\"cmd\":\"output\""));
-		TEST_ASSERT(ContainsSubstring(outputLine, L"\"replyTo\":-1"));
+		// replyTo 为负数时序列化层会省略该字段，测试需要严格校验这个协议边界。
+		TEST_ASSERT(!ContainsSubstring(outputLine, L"\"replyTo\""));
 		TEST_ASSERT(ContainsSubstring(outputLine, L"\"sessionId\":\"wf-output\""));
 		TEST_ASSERT(ContainsSubstring(outputLine, L"\"level\":\"warn\""));
 		TEST_ASSERT(ContainsSubstring(outputLine, L"\"message\":\"当前暂停位置无法映射到源码\""));
