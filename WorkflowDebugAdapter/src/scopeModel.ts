@@ -34,15 +34,15 @@ function assertNonNegativeInteger(value: number, name: string): void {
 
 function createLocalizedScopeName(kind: ScopeKind): string {
   switch (kind) {
-    case 'local':
+    case 'Local':
       return '局部';
-    case 'argument':
+    case 'Argument':
       return '参数';
-    case 'captured':
+    case 'Captured':
       return '捕获';
-    case 'global':
+    case 'Global':
       return '全局';
-    case 'object':
+    case 'Object':
       return '对象';
     default:
       return kind;

@@ -308,7 +308,7 @@ function verifyVariableScopesAndExpansion(): void {
     ['局部', '参数', '捕获', '全局']
   );
 
-  const mainLocalScope = adapter.getScopeModel().getScope(1, 0, 'local');
+  const mainLocalScope = adapter.getScopeModel().getScope(1, 0, 'Local');
   assert.ok(mainLocalScope);
   assert.equal(mainLocalScope?.canExpand, true);
   assert.ok(mainLocalScope && mainLocalScope.variablesReference > 0);
@@ -317,7 +317,7 @@ function verifyVariableScopesAndExpansion(): void {
     adapter.createVariables(mainLocalScope!.variablesReference)
   );
   const mainLocalState = adapter.receiveVariables(mainLocalResponse);
-  assert.equal(mainLocalState.scopeKind, 'local');
+  assert.equal(mainLocalState.scopeKind, 'Local');
   assert.deepEqual(
     mainLocalState.variables.map((variable) => variable.name),
     ['count', 'person']
@@ -334,7 +334,7 @@ function verifyVariableScopesAndExpansion(): void {
     adapter.createVariables(personVariable!.variablesReference)
   );
   const personState = adapter.receiveVariables(personResponse);
-  assert.equal(personState.scopeKind, 'object');
+  assert.equal(personState.scopeKind, 'Object');
   assert.deepEqual(
     personState.variables.map((variable) => variable.name),
     ['name', 'address']
@@ -362,7 +362,7 @@ function verifyVariableScopesAndExpansion(): void {
     ['局部', '参数', '捕获', '全局']
   );
 
-  const helperLocalScope = adapter.getScopeModel().getScope(1, 1, 'local');
+  const helperLocalScope = adapter.getScopeModel().getScope(1, 1, 'Local');
   assert.ok(helperLocalScope);
   assert.equal(helperLocalScope?.canExpand, true);
   const helperLocalResponse = target.receiveVariables(

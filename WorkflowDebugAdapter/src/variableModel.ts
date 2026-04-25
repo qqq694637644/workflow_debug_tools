@@ -73,7 +73,7 @@ export class VariableModel {
             remoteReference: variable.variablesReference,
             threadId,
             frameId,
-            kind: 'object',
+            kind: 'Object',
             name: variable.name,
             parentHandle
           })

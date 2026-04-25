@@ -502,7 +502,7 @@ export class AdapterSessionMachine extends BaseSessionMachine {
     if (parentHandle.frameId !== message.body.frameId) {
       throw new SessionStateError('变量响应的帧标识与句柄不一致。');
     }
-    if (parentHandle.kind !== message.body.scopeKind && !(parentHandle.kind === 'object' && message.body.scopeKind === 'object')) {
+    if (parentHandle.kind !== message.body.scopeKind && !(parentHandle.kind === 'Object' && message.body.scopeKind === 'Object')) {
       throw new SessionStateError('变量响应的类型与句柄不一致。');
     }
 

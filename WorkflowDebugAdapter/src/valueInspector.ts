@@ -36,7 +36,7 @@ interface VariableNode {
 interface FrameSnapshot {
   threadId: number;
   frameId: number;
-  roots: Record<'local' | 'argument' | 'captured' | 'global', VariableNode>;
+  roots: Record<'Local' | 'Argument' | 'Captured' | 'Global', VariableNode>;
 }
 
 export class ValueInspectorError extends Error {
@@ -46,11 +46,11 @@ export class ValueInspectorError extends Error {
   }
 }
 
-const scopeKinds: ReadonlyArray<'local' | 'argument' | 'captured' | 'global'> = [
-  'local',
-  'argument',
-  'captured',
-  'global'
+const scopeKinds: ReadonlyArray<'Local' | 'Argument' | 'Captured' | 'Global'> = [
+  'Local',
+  'Argument',
+  'Captured',
+  'Global'
 ];
 
 function assertNonNegativeInteger(value: number, name: string): void {
@@ -61,15 +61,15 @@ function assertNonNegativeInteger(value: number, name: string): void {
 
 function localizedScopeName(kind: ScopeKind): string {
   switch (kind) {
-    case 'local':
+    case 'Local':
       return '局部';
-    case 'argument':
+    case 'Argument':
       return '参数';
-    case 'captured':
+    case 'Captured':
       return '捕获';
-    case 'global':
+    case 'Global':
       return '全局';
-    case 'object':
+    case 'Object':
       return '对象';
     default:
       return kind;
@@ -134,10 +134,10 @@ export class ValueInspector {
       threadId,
       frameId,
       roots: {
-        local: this.buildScopeNode(threadId, frameId, 'local', values.local ?? []),
-        argument: this.buildScopeNode(threadId, frameId, 'argument', values.argument ?? []),
-        captured: this.buildScopeNode(threadId, frameId, 'captured', values.captured ?? []),
-        global: this.buildScopeNode(threadId, frameId, 'global', values.global ?? [])
+        Local: this.buildScopeNode(threadId, frameId, 'Local', values.local ?? []),
+        Argument: this.buildScopeNode(threadId, frameId, 'Argument', values.argument ?? []),
+        Captured: this.buildScopeNode(threadId, frameId, 'Captured', values.captured ?? []),
+        Global: this.buildScopeNode(threadId, frameId, 'Global', values.global ?? [])
       }
     };
     this.framesByKey.set(this.buildFrameKey(threadId, frameId), snapshot);
@@ -187,7 +187,7 @@ export class ValueInspector {
       throw new ValueInspectorError('变量句柄不属于当前线程或当前帧。');
     }
 
-    if (node.kind !== scopeKind && !(scopeKind === 'object' && node.kind === 'object')) {
+    if (node.kind !== scopeKind && !(scopeKind === 'Object' && node.kind === 'Object')) {
       throw new ValueInspectorError('变量句柄类型与请求类型不一致。');
     }
 
@@ -224,7 +224,7 @@ export class ValueInspector {
   private buildScopeNode(
     threadId: number,
     frameId: number,
-    kind: 'local' | 'argument' | 'captured' | 'global',
+    kind: 'Local' | 'Argument' | 'Captured' | 'Global',
     values: ReadonlyArray<InspectableVariableInput>
   ): VariableNode {
     const children = values.map((value) => this.buildVariableNode(threadId, frameId, value));
@@ -260,7 +260,7 @@ export class ValueInspector {
       reference: hasChildren ? this.nextReference++ : 0,
       threadId,
       frameId,
-      kind: 'object',
+      kind: 'Object',
       name: input.name,
       type: input.type,
       value: input.value,

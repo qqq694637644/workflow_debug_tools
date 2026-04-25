@@ -63,7 +63,8 @@ export interface SourceMapEntry {
   readonly column?: number;
 }
 
-export type ScopeKind = 'local' | 'argument' | 'captured' | 'global' | 'object';
+// 作用域类型使用宿主协议里的原始枚举文本，大小写必须一致。
+export type ScopeKind = 'Local' | 'Argument' | 'Captured' | 'Global' | 'Object';
 
 export interface PathMappingRule {
   readonly localPath: string;
@@ -178,7 +179,7 @@ export interface VariablesBody {
 export interface EvaluateBody {
   readonly expression: string;
   readonly frameId: number;
-  readonly scopeKind: 'local' | 'argument' | 'captured' | 'global';
+  readonly scopeKind: ScopeKind;
 }
 
 export interface ContinueBody {

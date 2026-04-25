@@ -254,7 +254,7 @@ function verifyFullFlowSmokeTest(): void {
     ['局部', '参数', '捕获', '全局']
   );
 
-  const localScope = adapter.getScopeModel().getScope(1, topFrame.frameId, 'local');
+  const localScope = adapter.getScopeModel().getScope(1, topFrame.frameId, 'Local');
   assert.ok(localScope);
   assert.equal(localScope?.canExpand, true);
   assert.ok(localScope && localScope.variablesReference > 0);

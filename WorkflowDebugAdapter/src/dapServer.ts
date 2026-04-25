@@ -447,6 +447,9 @@ export class WorkflowDebugDapServer {
   private async handleEvaluateRequest(message: DapRequestMessage): Promise<void> {
     this.requirePaused();
     const args = this.parseEvaluateArguments(message.arguments);
+    this.log(
+      `evaluate 开始：context=${args.context ?? 'repl'}，frameId=${args.frameId ?? 'undefined'}，expression=${args.expression}。`
+    );
     const frameIdentity = await this.resolveEvaluationFrameIdentity(args);
     const evaluation = await this.evaluateExpression(frameIdentity, args.expression);
     const response: WorkflowEvaluateResponseBody = {
@@ -536,7 +539,11 @@ export class WorkflowDebugDapServer {
     return {
       resolveIdentifier: async (name: string): Promise<EvaluationValue | null> => {
         const scopeState = await this.getEvaluationScopeState(frameIdentity, scopeCache);
-        const scopeOrder: ReadonlyArray<ScopeModelEntry['kind']> = ['local', 'argument', 'captured', 'global'];
+        this.log(
+          `evaluate 标识符解析：name=${name}，threadId=${frameIdentity.threadId}，frameId=${frameIdentity.frameId}，` +
+          `作用域=${this.describeScopeStateForLog(scopeState)}。`
+        );
+        const scopeOrder: ReadonlyArray<ScopeModelEntry['kind']> = ['Local', 'Argument', 'Captured', 'Global'];
         for (const kind of scopeOrder) {
           const scope = scopeState.scopes.find((item) => item.kind === kind);
           if (!scope || scope.variablesReference <= 0) {
@@ -544,12 +551,19 @@ export class WorkflowDebugDapServer {
           }
 
           const variables = await this.getEvaluationVariables(scope.variablesReference, variableCache);
+          this.log(
+            `evaluate 检查作用域：kind=${kind}，variablesReference=${scope.variablesReference}，` +
+            `变量=${this.describeVariableNamesForLog(variables)}。`
+          );
           const match = variables.find((variable) => variable.name === name);
           if (match) {
             return this.toEvaluationValue(match);
           }
         }
 
+        this.log(
+          `evaluate 标识符未命中：name=${name}，threadId=${frameIdentity.threadId}，frameId=${frameIdentity.frameId}。`
+        );
         return null;
       },
       resolveMember: async (target: EvaluationValue, propertyName: string): Promise<EvaluationValue | null> => {
@@ -586,11 +600,19 @@ export class WorkflowDebugDapServer {
     const key = `${frameIdentity.threadId}:${frameIdentity.frameId}`;
     const cached = scopeCache.get(key);
     if (cached) {
+      this.log(
+        `evaluate 复用作用域快照：threadId=${frameIdentity.threadId}，frameId=${frameIdentity.frameId}，` +
+        `作用域=${this.describeScopeStateForLog(cached)}。`
+      );
       return cached;
     }
 
     const state = await this.loadScopesForFrame(frameIdentity);
     scopeCache.set(key, state);
+    this.log(
+      `evaluate 加载作用域快照：threadId=${frameIdentity.threadId}，frameId=${frameIdentity.frameId}，` +
+      `作用域=${this.describeScopeStateForLog(state)}。`
+    );
     return state;
   }
 
@@ -600,12 +622,36 @@ export class WorkflowDebugDapServer {
   ): Promise<ReadonlyArray<VariableModelEntry>> {
     const cached = variableCache.get(variablesReference);
     if (cached) {
+      this.log(
+        `evaluate 复用变量快照：variablesReference=${variablesReference}，变量=${this.describeVariableNamesForLog(cached)}。`
+      );
       return cached;
     }
 
     const state = await this.loadVariablesForHandle(variablesReference);
     variableCache.set(variablesReference, state.variables);
+    this.log(
+      `evaluate 加载变量快照：variablesReference=${variablesReference}，变量=${this.describeVariableNamesForLog(state.variables)}。`
+    );
     return state.variables;
+  }
+
+  private describeScopeStateForLog(state: ScopeModelState): string {
+    if (state.scopes.length === 0) {
+      return '[]';
+    }
+
+    return `[${state.scopes.map((scope) => `${scope.kind}:${scope.variablesReference}`).join(', ')}]`;
+  }
+
+  private describeVariableNamesForLog(variables: ReadonlyArray<VariableModelEntry>, limit = 8): string {
+    if (variables.length === 0) {
+      return '[]';
+    }
+
+    const names = variables.slice(0, limit).map((variable) => variable.name);
+    const suffix = variables.length > limit ? ', ...' : '';
+    return `[${names.join(', ')}${suffix}]`;
   }
 
   private createPrimitiveEvaluationValue(value: string | number | boolean | null | undefined, type?: string): EvaluationValue {
