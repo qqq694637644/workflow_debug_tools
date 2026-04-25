@@ -88,6 +88,7 @@ namespace vl
 				void								Unbind();
 				bool								RequestStopOnEntry();
 				bool								IsBound() const;
+				bool								IsStopOnEntryPending() const;
 				Ptr<runtime::WfDebugger>			GetDebugger() const;
 				Ptr<RemoteWfDebugger>				GetRemoteDebugger() const;
 				void								CapturePausedState();

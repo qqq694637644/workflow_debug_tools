@@ -296,7 +296,8 @@ TEST_FILE
 		binding.Bind(debuggerBase);
 
 		TEST_ASSERT(binding.RequestStopOnEntry() == true);
-		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::RequiredToPause);
+		TEST_ASSERT(binding.IsStopOnEntryPending() == true);
+		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::Stopped);
 
 		binding.Unbind();
 	});
@@ -353,14 +354,16 @@ TEST_FILE
 		debugger->AttachThreadContext(&threadContext);
 
 		TEST_ASSERT(binding.RequestStopOnEntry() == true);
-		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::RequiredToPause);
+		TEST_ASSERT(binding.IsStopOnEntryPending() == true);
+		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::Running);
 		TEST_ASSERT(debugger->CallBreakIns(assembly.Obj(), unknownInstruction) == false);
-		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::RequiredToPause);
+		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::Running);
 		TEST_ASSERT(state.Snapshot().lastStoppedReason == L"");
 
 		threadContext.GetCurrentStackFrame().nextInstructionIndex = knownInstruction;
 		TEST_ASSERT(debugger->CallBreakIns(assembly.Obj(), knownInstruction) == true);
 		binding.CapturePausedState();
+		TEST_ASSERT(binding.IsStopOnEntryPending() == false);
 
 		auto snapshot = state.Snapshot();
 		TEST_ASSERT(snapshot.lastStoppedReason == L"entry");

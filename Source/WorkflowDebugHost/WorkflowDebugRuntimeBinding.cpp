@@ -284,22 +284,35 @@ namespace vl
 
 			bool RemoteWfDebugger::RequestStopOnEntry()
 			{
-				auto succeeded = Pause();
-				if (succeeded)
+				if (!binding)
+				{
+					return false;
+				}
+
+				// 入口暂停不应该直接把当前内部帧强行打成 Pause，
+				// 而是先挂起一个“等到第一条可映射源码语句再停”的标记。
+				binding->stopOnEntryPending = true;
 				{
 					std::lock_guard<std::mutex> guard(controlMutex);
 					pauseSnapshotCaptured = false;
-					controlCondition.notify_all();
 				}
-				return succeeded;
+				return true;
 			}
 
 			bool RemoteWfDebugger::BreakIns(runtime::WfAssembly* assembly, vint instruction)
 			{
-				// stopOnEntry 如果命中了内部帧，直接放行，让运行时继续走到第一条可映射源码语句。
-				if (binding && binding->ShouldDelayStopOnEntry())
+				if (binding)
 				{
-					return false;
+					// stopOnEntry 先跳过内部帧；等到第一条可映射源码语句时，再触发一次真正的入口暂停。
+					if (binding->ShouldDelayStopOnEntry())
+					{
+						return false;
+					}
+
+					if (binding->IsStopOnEntryPending())
+					{
+						return true;
+					}
 				}
 
 				return WfDebugger::BreakIns(assembly, instruction);
@@ -484,12 +497,7 @@ namespace vl
 					return false;
 				}
 
-				auto succeeded = remoteDebugger->RequestStopOnEntry();
-				if (succeeded)
-				{
-					stopOnEntryPending = true;
-				}
-				return succeeded;
+				return remoteDebugger->RequestStopOnEntry();
 			}
 
 			bool WorkflowDebugRuntimeBinding::ShouldDelayStopOnEntry() const
@@ -501,7 +509,7 @@ namespace vl
 
 				if (!remoteDebugger || !sourceCatalog)
 				{
-					return false;
+					return true;
 				}
 
 				// 入口暂停只接受能映射到源码的当前位置；如果当前帧还是内部初始化帧，就继续跑到下一条可映射语句。
@@ -517,6 +525,11 @@ namespace vl
 				frame.threadId = FindThreadId(remoteDebugger.Obj(), context);
 				frame.frameId = frameId;
 				return !TryBuildStackFrameFromPosition(frame, position, sourceCatalog);
+			}
+
+			bool WorkflowDebugRuntimeBinding::IsStopOnEntryPending() const
+			{
+				return stopOnEntryPending.load();
 			}
 
 			bool WorkflowDebugRuntimeBinding::IsBound() const
