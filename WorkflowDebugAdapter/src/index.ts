@@ -9,4 +9,5 @@ export * from './handleTable.js';
 export * from './scopeModel.js';
 export * from './valueInspector.js';
 export * from './variableModel.js';
+export * from './expressionEvaluator.js';
 export * from './sessionMachine.js';

@@ -98,6 +98,20 @@ export interface WorkflowVariablesArguments {
   readonly variablesReference: number;
 }
 
+export interface WorkflowEvaluateArguments {
+  readonly expression: string;
+  readonly frameId?: number;
+  readonly context?: string;
+}
+
+export interface WorkflowEvaluateResponseBody {
+  readonly result: string;
+  readonly type?: string;
+  readonly variablesReference: number;
+  readonly namedVariables?: number;
+  readonly indexedVariables?: number;
+}
+
 export interface WorkflowSetBreakpointsArguments {
   readonly source: DapSource;
   readonly breakpoints?: ReadonlyArray<DapBreakpoint>;

@@ -1,0 +1,34 @@
+﻿module test;
+using system::*;
+
+var gText : string = "GLOBAL";
+var gCount : int = 7;
+var gEnabled : bool = true;
+
+func BuildProbe(prefix : string, count : int) : string
+{
+    var localCount : int = count + 3;
+    var localText : string = $"$(prefix)-$(gText)";
+    var optional : Subscription^ = null;
+
+    /* 局部断点：这里开始检查参数、局部和捕获变量。 */ var inspector = func(suffix : string): string
+    {
+        var combined : string = $"$(prefix)$(suffix)";
+        var computed : int = localCount + count + gCount;
+        var flags : bool = gEnabled and (localCount > count);
+        var inverted : bool = not flags;
+        var echoed : string = $"$(localText)$(suffix)";
+        /* 闭包断点：这里开始检查闭包内的局部和捕获变量。 */ var snapshot : string = $"$(echoed)$(combined)";
+        return snapshot;
+    };
+
+    return inspector("!");
+}
+
+func main() : string
+{
+    var name : string = "Workflow";
+    var value : int = 4;
+    /* 主断点：这里开始测试 name、value 和全局变量。 */ var result : string = BuildProbe(name, value);
+    return result;
+}

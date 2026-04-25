@@ -342,6 +342,7 @@ namespace
 		{L"TryCatch",         L"Scripts\\TryCatch.txt",         L"异常、捕获和 finally。"},
 		{L"NestedCalls",      L"Scripts\\NestedCalls\\Main.txt",L"多脚本嵌套调用。", NestedCallsExtraFiles, sizeof(NestedCallsExtraFiles) / sizeof(NestedCallsExtraFiles[0])},
 		{L"BindSimple",       L"Scripts\\BindSimple.txt",       L"绑定表达式和观察式更新。"},
+		{L"EvaluatePlayground", L"Scripts\\EvaluatePlayground.txt", L"调试求值、REPL 和 hover 验证。"},
 	};
 }
 
@@ -356,8 +357,8 @@ int main(int argc, char* argv[])
 	for (vint i = 1; i < argc; i++)
 	{
 		WString argument = argv[i];
-		// 允许调试开关和脚本名自由排列，避免把 --workflow-debug 误判成脚本选择。
-		if (argument.Left(2) == L"--")
+		// 允许调试开关和脚本名自由排列，也兼容 copilotExecute 在 UnitTest 模式下传进来的 /C。
+		if (argument.Left(2) == L"--" || argument.Left(1) == L"/")
 		{
 			continue;
 		}

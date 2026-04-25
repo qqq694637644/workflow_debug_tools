@@ -259,3 +259,19 @@ namespace test
 ```powershell
 Test\UnitTest\mytest\x64\Debug\mytest.exe NestedCalls
 ```
+
+## 12. 调试求值验证
+
+如果要专门验证 `evaluate / REPL / hover`，直接运行新增的 `EvaluatePlayground` 场景。脚本里已经放了 3 个中文注释标记，分别对应 `main`、`BuildProbe` 和闭包内部的断点位置；其中 `main` 断点要落在 `name` 和 `value` 初始化之后，不能停在函数入口。
+
+```powershell
+Test\UnitTest\mytest\x64\Debug\mytest.exe EvaluatePlayground
+```
+
+验证重点：
+
+- `main` 断点：`name`、`value`、`gText`、`gCount`、`gEnabled`、`name + gText`、`value + gCount`、`value * gCount`、`value / 2`、`value % gCount`、`name.length`、`name[0]`、`value < gCount`、`value <= gCount`、`value == 4`、`value === 4`、`value != gCount`、`!gEnabled`、`-value`
+- `BuildProbe` 断点：`prefix`、`count`、`localCount`、`localText`、`optional`、`prefix + gText`、`localCount > count`、`localCount >= count`、`localText.length`、`localText[0]`、`localText[99]`（越界应返回 `undefined`）、`optional == null`、`gEnabled || false`
+- 闭包断点：`suffix`、`prefix`、`count`、`localCount`、`combined`、`computed`、`flags`、`inverted`、`echoed`、`prefix + suffix`、`computed % gCount`、`localCount >= count`、`!flags`、`suffix.length`、`suffix[0]`
+
+如果不附加调试器，脚本最终返回值应为 `Workflow-GLOBAL!Workflow!`，可以用来做一次普通运行的烟雾检查。

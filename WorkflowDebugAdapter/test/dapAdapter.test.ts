@@ -583,6 +583,7 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
     assert.equal((initializeResponse.body as { readonly supportsRestartRequest?: boolean } | undefined)?.supportsRestartRequest, true);
     assert.equal((initializeResponse.body as { readonly supportsStepOut?: boolean } | undefined)?.supportsStepOut, true);
     assert.equal((initializeResponse.body as { readonly supportsVariableType?: boolean } | undefined)?.supportsVariableType, true);
+    assert.equal((initializeResponse.body as { readonly supportsEvaluateForHovers?: boolean } | undefined)?.supportsEvaluateForHovers, true);
     const receivedMessages = client.getReceivedMessages();
     const initializeResponseIndex = receivedMessages.findIndex((message) => message.type === 'response' && message.request_seq === 1 && message.command === 'initialize');
     assert.ok(initializeResponseIndex >= 0);
@@ -644,6 +645,20 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       });
       assert.equal((stopped.body as { readonly threadId?: number }).threadId, 1);
 
+      const preStackEvaluateResponse = await client.request('evaluate', {
+        expression: 'context',
+        context: 'hover'
+      });
+      assert.equal(preStackEvaluateResponse.success, true);
+      const preStackEvaluateBody = preStackEvaluateResponse.body as {
+        readonly result: string;
+        readonly type?: string;
+        readonly variablesReference: number;
+      };
+      assert.equal(preStackEvaluateBody.result, '{...}');
+      assert.equal(preStackEvaluateBody.type, 'Context');
+      assert.ok(preStackEvaluateBody.variablesReference > 0);
+
       const stackTraceResponse = await client.request('stackTrace', {
         threadId: 1,
         startFrame: 0,
@@ -656,6 +671,82 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       assert.equal(stackTraceBody.stackFrames[0].name, 'RaiseException');
       assert.equal(stackTraceBody.stackFrames[0].source?.path, normalizedLocalPath);
       assert.equal(stackTraceBody.stackFrames[0].column, 1);
+
+      const topFrameId = stackTraceBody.stackFrames[0].id;
+      const mainFrameId = stackTraceBody.stackFrames[2].id;
+
+      const hoverEvaluateResponse = await client.request('evaluate', {
+        expression: 'context',
+        context: 'hover'
+      });
+      assert.equal(hoverEvaluateResponse.success, true);
+      const hoverEvaluateBody = hoverEvaluateResponse.body as {
+        readonly result: string;
+        readonly type?: string;
+        readonly variablesReference: number;
+        readonly namedVariables?: number;
+        readonly indexedVariables?: number;
+      };
+      assert.equal(hoverEvaluateBody.result, '{...}');
+      assert.equal(hoverEvaluateBody.type, 'Context');
+      assert.ok(hoverEvaluateBody.variablesReference > 0);
+      assert.equal(hoverEvaluateBody.namedVariables, 1);
+      assert.equal(hoverEvaluateBody.indexedVariables, 0);
+
+      const hoverEvaluateVariablesResponse = await client.request('variables', {
+        variablesReference: hoverEvaluateBody.variablesReference
+      });
+      assert.equal(hoverEvaluateVariablesResponse.success, true);
+      const hoverEvaluateVariablesBody = hoverEvaluateVariablesResponse.body as {
+        readonly variables: Array<{ readonly name: string; readonly value: string; readonly type?: string; readonly variablesReference: number }>;
+      };
+      assert.equal(hoverEvaluateVariablesBody.variables[0].name, 'message');
+      assert.equal(hoverEvaluateVariablesBody.variables[0].value, 'Exception (string)');
+
+      const propertyEvaluateResponse = await client.request('evaluate', {
+        expression: 'context.message',
+        frameId: topFrameId,
+        context: 'hover'
+      });
+      assert.equal(propertyEvaluateResponse.success, true);
+      const propertyEvaluateBody = propertyEvaluateResponse.body as {
+        readonly result: string;
+        readonly type?: string;
+        readonly variablesReference: number;
+      };
+      assert.equal(propertyEvaluateBody.result, 'Exception');
+      assert.equal(propertyEvaluateBody.type, 'string');
+      assert.equal(propertyEvaluateBody.variablesReference, 0);
+
+      const scopeEvaluateResponse = await client.request('evaluate', {
+        expression: 'input + suffix',
+        frameId: topFrameId,
+        context: 'repl'
+      });
+      assert.equal(scopeEvaluateResponse.success, true);
+      const scopeEvaluateBody = scopeEvaluateResponse.body as {
+        readonly result: string;
+        readonly type?: string;
+        readonly variablesReference: number;
+      };
+      assert.equal(scopeEvaluateBody.result, 'abc!');
+      assert.equal(scopeEvaluateBody.type, 'string');
+      assert.equal(scopeEvaluateBody.variablesReference, 0);
+
+      const replEvaluateResponse = await client.request('evaluate', {
+        expression: 'counter + 1',
+        frameId: mainFrameId,
+        context: 'repl'
+      });
+      assert.equal(replEvaluateResponse.success, true);
+      const replEvaluateBody = replEvaluateResponse.body as {
+        readonly result: string;
+        readonly type?: string;
+        readonly variablesReference: number;
+      };
+      assert.equal(replEvaluateBody.result, '2');
+      assert.equal(replEvaluateBody.type, 'number');
+      assert.equal(replEvaluateBody.variablesReference, 0);
 
       const scopesResponse = await client.request('scopes', {
         frameId: stackTraceBody.stackFrames[0].id

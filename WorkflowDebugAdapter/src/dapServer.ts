@@ -2,6 +2,7 @@ import { BridgeTransport, type BridgeTransportEndpoint } from './bridgeTransport
 import { normalizeConnectTimeoutMs, waitForOptionalTimeout } from './attachTimeout.js';
 import { AdapterSessionMachine } from './sessionMachine.js';
 import { traceDebugMessage } from './diagnosticTrace.js';
+import { evaluateExpression as evaluateDebugExpression, type EvaluationValue, type ExpressionResolver } from './expressionEvaluator.js';
 import {
   createDapEvent,
   createDapResponse,
@@ -13,6 +14,8 @@ import {
   type DapStackFrame,
   type DapVariable,
   DapMessageReader,
+  type WorkflowEvaluateArguments,
+  type WorkflowEvaluateResponseBody,
   type WorkflowAttachArguments,
   type WorkflowContinueArguments,
   type WorkflowScopesArguments,
@@ -23,6 +26,8 @@ import {
   type WorkflowInitializeArguments,
   type WorkflowConfigurationDoneArguments
 } from './dapProtocol.js';
+import { type ScopeModelEntry, type ScopeModelState } from './scopeModel.js';
+import { type VariableModelEntry, type VariableModelState } from './variableModel.js';
 import { DEFAULT_CAPABILITIES, type EventEnvelope, type ProtocolCommand, type ProtocolEnvelope, type RequestEnvelope, type ResponseEnvelope } from './protocol.js';
 import { type BreakpointSyncState, type SourceBreakpointInput } from './breakpointMapper.js';
 
@@ -241,7 +246,7 @@ export class WorkflowDebugDapServer {
           this.sendErrorResponse(message, '当前版本暂不支持暂停请求。');
           return;
         case 'evaluate':
-          this.sendErrorResponse(message, '当前版本暂不支持表达式求值。');
+          await this.handleEvaluateRequest(message);
           return;
         default:
           this.sendErrorResponse(message, `未实现的 DAP 请求：${message.command}`);
@@ -415,9 +420,7 @@ export class WorkflowDebugDapServer {
       throw new Error('找不到对应的栈帧。');
     }
 
-    const request = this.adapter.createScopes(frameIdentity.frameId);
-    const response = await this.sendHostRequest(request);
-    const state = this.adapter.receiveScopes(response);
+    const state = await this.loadScopesForFrame(frameIdentity);
     const scopes = state.scopes.map((scope) => this.toDapScope(scope.name, scope.variablesReference));
     this.sendResponse(message, {
       scopes
@@ -433,14 +436,297 @@ export class WorkflowDebugDapServer {
       throw new Error('变量句柄不存在。');
     }
 
-    const request = this.adapter.createVariables(args.variablesReference);
-    const response = await this.sendHostRequest(request);
-    const state = this.adapter.receiveVariables(response);
+    const state = await this.loadVariablesForHandle(args.variablesReference);
     const variables = state.variables.map((variable) => this.toDapVariable(variable.name, variable.value, variable.type, variable.variablesReference, variable.namedVariables, variable.indexedVariables));
     this.sendResponse(message, {
       variables
     });
     this.log(`variables 返回：variablesReference=${args.variablesReference}，变量数=${variables.length}。`);
+  }
+
+  private async handleEvaluateRequest(message: DapRequestMessage): Promise<void> {
+    this.requirePaused();
+    const args = this.parseEvaluateArguments(message.arguments);
+    const frameIdentity = await this.resolveEvaluationFrameIdentity(args);
+    const evaluation = await this.evaluateExpression(frameIdentity, args.expression);
+    const response: WorkflowEvaluateResponseBody = {
+      result: evaluation.display,
+      type: evaluation.type,
+      variablesReference: evaluation.variablesReference,
+      namedVariables: evaluation.namedVariables,
+      indexedVariables: evaluation.indexedVariables
+    };
+    this.sendResponse(message, response);
+    this.log(
+      `evaluate 返回：context=${args.context ?? 'repl'}，frameId=${frameIdentity.frameId}，` +
+      `result=${response.result}，type=${response.type ?? 'undefined'}。`
+    );
+  }
+
+  private async loadScopesForFrame(frameIdentity: FrameIdentity): Promise<ScopeModelState> {
+    const request = this.adapter.createScopes(frameIdentity.frameId);
+    const response = await this.sendHostRequest(request);
+    return this.adapter.receiveScopes(response);
+  }
+
+  private async loadVariablesForHandle(variablesReference: number): Promise<VariableModelState> {
+    const request = this.adapter.createVariables(variablesReference);
+    const response = await this.sendHostRequest(request);
+    return this.adapter.receiveVariables(response);
+  }
+
+  private async resolveEvaluationFrameIdentity(args: WorkflowEvaluateArguments): Promise<FrameIdentity> {
+    const snapshot = this.adapter.snapshot();
+    const threadId = this.activeThreadId ?? snapshot.lastStoppedThreadId;
+    if (threadId === null) {
+      throw new Error('当前没有可用于求值的暂停线程。');
+    }
+
+    if (typeof args.frameId === 'number') {
+      let frameIdentity = this.frameIdentityById.get(args.frameId);
+      if (!frameIdentity) {
+        await this.ensureStackTraceLoaded(threadId, true);
+        frameIdentity = this.frameIdentityById.get(args.frameId);
+      }
+
+      if (!frameIdentity) {
+        throw new Error('找不到对应的栈帧。');
+      }
+
+      return frameIdentity;
+    }
+
+    await this.ensureStackTraceLoaded(threadId);
+    const topFrame = this.adapter.getStackModel().getFrames(threadId)[0];
+    if (!topFrame) {
+      throw new Error('当前没有可用于求值的栈帧。');
+    }
+
+    return {
+      threadId,
+      frameId: topFrame.frameId
+    };
+  }
+
+  private async ensureStackTraceLoaded(threadId: number, force = false): Promise<void> {
+    const frames = this.adapter.getStackModel().getFrames(threadId);
+    if (!force && frames.length > 0) {
+      return;
+    }
+
+    // 求值经常发生在用户还没展开调用栈的时候，这里主动抓一次调用栈，
+    // 免得 hover / REPL 因为缺少 frame 映射而直接失败。
+    const request = this.adapter.createStackTrace(threadId, 0, 1000);
+    const response = await this.sendHostRequest(request);
+    const state = this.adapter.receiveStackTrace(response);
+    for (const frame of state.frames) {
+      this.getStackFrameId(frame.threadId, frame.frameId);
+    }
+  }
+
+  private async evaluateExpression(frameIdentity: FrameIdentity, expression: string): Promise<EvaluationValue> {
+    const resolver = this.createExpressionResolver(frameIdentity);
+    return evaluateDebugExpression(expression, resolver);
+  }
+
+  private createExpressionResolver(frameIdentity: FrameIdentity): ExpressionResolver {
+    const scopeCache = new Map<string, ScopeModelState>();
+    const variableCache = new Map<number, ReadonlyArray<VariableModelEntry>>();
+
+    return {
+      resolveIdentifier: async (name: string): Promise<EvaluationValue | null> => {
+        const scopeState = await this.getEvaluationScopeState(frameIdentity, scopeCache);
+        const scopeOrder: ReadonlyArray<ScopeModelEntry['kind']> = ['local', 'argument', 'captured', 'global'];
+        for (const kind of scopeOrder) {
+          const scope = scopeState.scopes.find((item) => item.kind === kind);
+          if (!scope || scope.variablesReference <= 0) {
+            continue;
+          }
+
+          const variables = await this.getEvaluationVariables(scope.variablesReference, variableCache);
+          const match = variables.find((variable) => variable.name === name);
+          if (match) {
+            return this.toEvaluationValue(match);
+          }
+        }
+
+        return null;
+      },
+      resolveMember: async (target: EvaluationValue, propertyName: string): Promise<EvaluationValue | null> => {
+        if (target.kind === 'primitive' && typeof target.value === 'string') {
+          if (propertyName === 'length') {
+            return this.createPrimitiveEvaluationValue(target.value.length, 'number');
+          }
+
+          const index = Number.parseInt(propertyName, 10);
+          if (Number.isInteger(index) && index >= 0 && String(index) === propertyName) {
+            const characters = Array.from(target.value);
+            if (index < characters.length) {
+              return this.createPrimitiveEvaluationValue(characters[index], 'string');
+            }
+            return this.createPrimitiveEvaluationValue(undefined, 'undefined');
+          }
+        }
+
+        if (target.kind !== 'object' || target.variablesReference <= 0) {
+          return null;
+        }
+
+        const variables = await this.getEvaluationVariables(target.variablesReference, variableCache);
+        const match = variables.find((variable) => variable.name === propertyName);
+        return match ? this.toEvaluationValue(match) : null;
+      }
+    };
+  }
+
+  private async getEvaluationScopeState(
+    frameIdentity: FrameIdentity,
+    scopeCache: Map<string, ScopeModelState>
+  ): Promise<ScopeModelState> {
+    const key = `${frameIdentity.threadId}:${frameIdentity.frameId}`;
+    const cached = scopeCache.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const state = await this.loadScopesForFrame(frameIdentity);
+    scopeCache.set(key, state);
+    return state;
+  }
+
+  private async getEvaluationVariables(
+    variablesReference: number,
+    variableCache: Map<number, ReadonlyArray<VariableModelEntry>>
+  ): Promise<ReadonlyArray<VariableModelEntry>> {
+    const cached = variableCache.get(variablesReference);
+    if (cached) {
+      return cached;
+    }
+
+    const state = await this.loadVariablesForHandle(variablesReference);
+    variableCache.set(variablesReference, state.variables);
+    return state.variables;
+  }
+
+  private createPrimitiveEvaluationValue(value: string | number | boolean | null | undefined, type?: string): EvaluationValue {
+    return {
+      kind: 'primitive',
+      value,
+      display: this.formatPrimitiveDisplayValue(value),
+      type: type ?? this.inferPrimitiveType(value),
+      variablesReference: 0,
+      namedVariables: 0,
+      indexedVariables: 0
+    };
+  }
+
+  private toEvaluationValue(entry: VariableModelEntry): EvaluationValue {
+    const type = entry.type.trim().length > 0 ? entry.type.trim() : this.inferTypeFromValue(entry.value);
+    if (entry.variablesReference > 0) {
+      return {
+        kind: 'object',
+        value: undefined,
+        display: entry.value,
+        type,
+        variablesReference: entry.variablesReference,
+        namedVariables: entry.namedVariables,
+        indexedVariables: entry.indexedVariables
+      };
+    }
+
+    return {
+      kind: 'primitive',
+      value: this.parsePrimitiveValue(entry.value, type),
+      display: entry.value,
+      type,
+      variablesReference: 0,
+      namedVariables: 0,
+      indexedVariables: 0
+    };
+  }
+
+  private parsePrimitiveValue(value: string, declaredType: string): string | number | boolean | null | undefined {
+    const normalizedType = declaredType.trim().toLowerCase();
+    if (normalizedType === 'string') {
+      return value;
+    }
+
+    if (normalizedType === 'boolean') {
+      if (value === 'true') {
+        return true;
+      }
+
+      if (value === 'false') {
+        return false;
+      }
+    }
+
+    if (normalizedType === 'number' || normalizedType === 'int' || normalizedType === 'integer' || normalizedType === 'float' || normalizedType === 'double' || normalizedType === 'long' || normalizedType === 'short' || normalizedType === 'byte') {
+      const parsed = Number(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+
+    if (normalizedType === 'null') {
+      return null;
+    }
+
+    if (normalizedType === 'undefined') {
+      return undefined;
+    }
+
+    if (value === 'true') {
+      return true;
+    }
+
+    if (value === 'false') {
+      return false;
+    }
+
+    if (value === 'null') {
+      return null;
+    }
+
+    if (value === 'undefined') {
+      return undefined;
+    }
+
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric) && value.trim().length > 0) {
+      return numeric;
+    }
+
+    return value;
+  }
+
+  private inferTypeFromValue(value: string): string {
+    const parsed = this.parsePrimitiveValue(value, '');
+    return this.inferPrimitiveType(parsed);
+  }
+
+  private inferPrimitiveType(value: string | number | boolean | null | undefined): string {
+    if (value === null) {
+      return 'null';
+    }
+
+    if (value === undefined) {
+      return 'undefined';
+    }
+
+    return typeof value;
+  }
+
+  private formatPrimitiveDisplayValue(value: string | number | boolean | null | undefined): string {
+    if (value === null) {
+      return 'null';
+    }
+
+    if (value === undefined) {
+      return 'undefined';
+    }
+
+    return String(value);
   }
 
   private async handleDisconnectRequest(message: DapRequestMessage): Promise<void> {
@@ -671,7 +957,7 @@ export class WorkflowDebugDapServer {
       supportsConfigurationDoneRequest: true,
       supportsContinueOnTerminateRequest: false,
       supportsVariableType: true,
-      supportsEvaluateForHovers: false,
+      supportsEvaluateForHovers: true,
       supportsFunctionBreakpoints: false,
       supportsConditionalBreakpoints: false,
       supportsHitConditionalBreakpoints: false,
@@ -1013,6 +1299,31 @@ export class WorkflowDebugDapServer {
 
     return {
       variablesReference: record.variablesReference
+    };
+  }
+
+  private parseEvaluateArguments(args: unknown): WorkflowEvaluateArguments {
+    if (typeof args !== 'object' || args === null) {
+      throw new Error('evaluate 请求必须携带参数。');
+    }
+
+    const record = args as Record<string, unknown>;
+    const expression = typeof record.expression === 'string' ? record.expression.trim() : '';
+    if (!expression) {
+      throw new Error('evaluate 必须携带非空表达式。');
+    }
+
+    const frameId = typeof record.frameId === 'number' && Number.isInteger(record.frameId) && record.frameId > 0
+      ? record.frameId
+      : undefined;
+    const context = typeof record.context === 'string' && record.context.trim().length > 0
+      ? record.context.trim()
+      : undefined;
+
+    return {
+      expression,
+      frameId,
+      context
     };
   }
 
