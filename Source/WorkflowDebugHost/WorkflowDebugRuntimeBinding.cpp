@@ -318,6 +318,18 @@ namespace vl
 				return succeeded;
 			}
 
+			bool RemoteWfDebugger::RequestStepOut(bool beforeCodegen)
+			{
+				auto succeeded = StepOut(beforeCodegen);
+				if (succeeded)
+				{
+					std::lock_guard<std::mutex> guard(controlMutex);
+					pauseSnapshotCaptured = false;
+					controlCondition.notify_all();
+				}
+				return succeeded;
+			}
+
 			void RemoteWfDebugger::OnStartExecution()
 			{
 			}

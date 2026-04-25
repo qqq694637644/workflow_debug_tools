@@ -51,7 +51,7 @@ export const DEFAULT_CAPABILITIES: CapabilitySet = Object.freeze({
   supportsContinue: true,
   supportsStepOver: true,
   supportsStepIn: true,
-  supportsStepOut: false,
+  supportsStepOut: true,
   supportsStackTrace: true,
   supportsVariables: true
 });

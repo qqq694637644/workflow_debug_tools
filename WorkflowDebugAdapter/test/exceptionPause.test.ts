@@ -29,7 +29,7 @@ const sourceMap = [
 ] as const;
 
 class RecordingRuntimeControl implements TargetRuntimeControl {
-  public readonly calls: Array<{ readonly kind: 'run' | 'stepOver' | 'stepInto'; readonly threadId: number }> = [];
+  public readonly calls: Array<{ readonly kind: 'run' | 'stepOver' | 'stepInto' | 'stepOut'; readonly threadId: number }> = [];
 
   public run(threadId: number): boolean {
     this.calls.push({
@@ -50,6 +50,14 @@ class RecordingRuntimeControl implements TargetRuntimeControl {
   public stepInto(threadId: number): boolean {
     this.calls.push({
       kind: 'stepInto',
+      threadId
+    });
+    return true;
+  }
+
+  public stepOut(threadId: number): boolean {
+    this.calls.push({
+      kind: 'stepOut',
       threadId
     });
     return true;

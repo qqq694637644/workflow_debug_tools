@@ -43,7 +43,7 @@ const sourceMap = [
 ] as const;
 
 class RecordingRuntimeControl implements TargetRuntimeControl {
-  public readonly calls: Array<{ readonly kind: 'run' | 'stepOver' | 'stepInto'; readonly threadId: number }> = [];
+  public readonly calls: Array<{ readonly kind: 'run' | 'stepOver' | 'stepInto' | 'stepOut'; readonly threadId: number }> = [];
 
   public run(threadId: number): boolean {
     this.calls.push({
@@ -64,6 +64,14 @@ class RecordingRuntimeControl implements TargetRuntimeControl {
   public stepInto(threadId: number): boolean {
     this.calls.push({
       kind: 'stepInto',
+      threadId
+    });
+    return true;
+  }
+
+  public stepOut(threadId: number): boolean {
+    this.calls.push({
+      kind: 'stepOut',
       threadId
     });
     return true;
@@ -489,6 +497,24 @@ async function startFakeHost(port: number): Promise<{
         return;
       }
 
+      if (message.type === 'request' && message.cmd === 'stepOut') {
+        const stepOutRequest = message as RequestEnvelope<'stepOut'>;
+        target.onStep(stepOutRequest);
+        const stopped = target.handleExecutionPoint({
+          threadId: 1,
+          frameId: 1,
+          sourceId: 12,
+          row: 10,
+          functionName: 'Update',
+          sourcePath: remotePath,
+          stackFrames: createStackFrames(0).slice(0, 2)
+        });
+        if (stopped) {
+          await transport.send(stopped);
+        }
+        return;
+      }
+
       if (message.type === 'request' && message.cmd === 'stackTrace') {
         const stackTraceRequest = message as RequestEnvelope<'stackTrace'>;
         const response = target.receiveStackTrace(stackTraceRequest);
@@ -553,6 +579,7 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
     });
     assert.equal(initializeResponse.success, true);
     assert.equal((initializeResponse.body as { readonly supportsRestartRequest?: boolean } | undefined)?.supportsRestartRequest, true);
+    assert.equal((initializeResponse.body as { readonly supportsStepOut?: boolean } | undefined)?.supportsStepOut, true);
     assert.equal((initializeResponse.body as { readonly supportsVariableType?: boolean } | undefined)?.supportsVariableType, true);
     const receivedMessages = client.getReceivedMessages();
     const initializeResponseIndex = receivedMessages.findIndex((message) => message.type === 'response' && message.request_seq === 1 && message.command === 'initialize');
@@ -672,6 +699,28 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       });
       assert.equal((stepStopped.body as { readonly threadId?: number }).threadId, 1);
 
+      const stepOutResponse = await client.request('stepOut', {
+        threadId: 1
+      });
+      assert.equal(stepOutResponse.success, true);
+
+      const stepOutStopped = await client.waitForEvent('stopped', (event) => {
+        const body = event.body as { readonly reason?: string } | undefined;
+        return body?.reason === 'step';
+      });
+      assert.equal((stepOutStopped.body as { readonly threadId?: number }).threadId, 1);
+
+      const stepOutStackTraceResponse = await client.request('stackTrace', {
+        threadId: 1,
+        startFrame: 0,
+        levels: 20
+      });
+      assert.equal(stepOutStackTraceResponse.success, true);
+      const stepOutStackTraceBody = stepOutStackTraceResponse.body as {
+        readonly stackFrames: Array<{ readonly name: string }>;
+      };
+      assert.equal(stepOutStackTraceBody.stackFrames[0].name, 'Update');
+
       assert.deepEqual(host.runtimeControl.calls, [
         {
           kind: 'run',
@@ -679,6 +728,10 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
         },
         {
           kind: 'stepOver',
+          threadId: 1
+        },
+        {
+          kind: 'stepOut',
           threadId: 1
         }
       ]);

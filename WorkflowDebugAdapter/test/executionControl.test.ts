@@ -29,7 +29,7 @@ const sourceMap = [
 ] as const;
 
 class RecordingRuntimeControl implements TargetRuntimeControl {
-  public readonly calls: Array<{ readonly kind: 'run' | 'stepOver' | 'stepInto'; readonly threadId: number }> = [];
+  public readonly calls: Array<{ readonly kind: 'run' | 'stepOver' | 'stepInto' | 'stepOut'; readonly threadId: number }> = [];
 
   public run(threadId: number): boolean {
     this.calls.push({
@@ -50,6 +50,14 @@ class RecordingRuntimeControl implements TargetRuntimeControl {
   public stepInto(threadId: number): boolean {
     this.calls.push({
       kind: 'stepInto',
+      threadId
+    });
+    return true;
+  }
+
+  public stepOut(threadId: number): boolean {
+    this.calls.push({
+      kind: 'stepOut',
       threadId
     });
     return true;
@@ -188,6 +196,19 @@ function verifyStepMapping(): void {
   assert.equal(stepInStopped?.body.row, 11);
   adapter.receiveStopped(stepInStopped!);
 
+  const stepOutRequest = adapter.createStepOut(1);
+  target.onStep(stepOutRequest);
+  const stepOutStopped = target.handleExecutionPoint({
+    threadId: 1,
+    frameId: 0,
+    sourceId: 7,
+    row: 9
+  });
+  assert.ok(stepOutStopped);
+  assert.equal(stepOutStopped?.body.reason, 'step');
+  assert.equal(stepOutStopped?.body.frameId, 0);
+  adapter.receiveStopped(stepOutStopped!);
+
   assert.deepEqual(runtimeControl.calls, [
     {
       kind: 'run',
@@ -200,13 +221,17 @@ function verifyStepMapping(): void {
     {
       kind: 'stepInto',
       threadId: 1
+    },
+    {
+      kind: 'stepOut',
+      threadId: 1
     }
   ]);
 
   assert.equal(adapter.snapshot().phase, 'paused');
   assert.equal(target.snapshot().phase, 'paused');
-  assert.equal(adapter.snapshot().lastStoppedRow, 11);
-  assert.equal(target.snapshot().lastStoppedRow, 11);
+  assert.equal(adapter.snapshot().lastStoppedRow, 9);
+  assert.equal(target.snapshot().lastStoppedRow, 9);
 }
 
 function main(): void {

@@ -91,6 +91,7 @@ export interface TargetRuntimeControl {
   run(threadId: number): boolean;
   stepOver(threadId: number): boolean;
   stepInto(threadId: number): boolean;
+  stepOut(threadId: number): boolean;
 }
 
 function createNoopRuntimeControl(): TargetRuntimeControl {
@@ -102,6 +103,9 @@ function createNoopRuntimeControl(): TargetRuntimeControl {
       return true;
     },
     stepInto(): boolean {
+      return true;
+    },
+    stepOut(): boolean {
       return true;
     }
   };
@@ -380,6 +384,15 @@ export class AdapterSessionMachine extends BaseSessionMachine {
     return request;
   }
 
+  public createStepOut(threadId: number): RequestEnvelope<'stepOut'> {
+    this.requirePhase(['paused'], '只能在暂停状态下单步步出。');
+    const request = this.createRequest('stepOut', {
+      threadId
+    });
+    this.setPhase('running');
+    return request;
+  }
+
   public createDisconnect(reason: string, restart: boolean): RequestEnvelope<'disconnect'> {
     this.requirePhase(['negotiating', 'initializing', 'ready', 'paused', 'running'], '只能在调试会话建立后断开。');
     return this.createRequest('disconnect', {
@@ -557,7 +570,7 @@ export class TargetSessionMachine extends BaseSessionMachine {
   private readonly stackInspector = new StackInspector();
   private readonly valueInspector = new ValueInspector();
   private readonly breakpointRegistry = new BreakpointRegistry(this.sourceCatalog);
-  private pendingRunMode: 'continue' | 'stepOver' | 'stepIn' | null = null;
+  private pendingRunMode: 'continue' | 'stepOver' | 'stepIn' | 'stepOut' | null = null;
   private lastControlRequestSeq: number | null = null;
   private stepOrigin: ExecutionPoint | null = null;
 
@@ -686,19 +699,26 @@ export class TargetSessionMachine extends BaseSessionMachine {
     this.setPhase('running');
   }
 
-  public onStep(message: RequestEnvelope<'next' | 'stepIn'>): void {
+  public onStep(message: RequestEnvelope<'next' | 'stepIn' | 'stepOut'>): void {
     this.requirePhase(['paused'], '只能在暂停状态下单步执行。');
     this.acceptInbound(message);
 
     const isStepIn = message.cmd === 'stepIn';
+    const isStepOut = message.cmd === 'stepOut';
     const accepted = isStepIn
       ? this.runtimeControl.stepInto(message.body.threadId)
-      : this.runtimeControl.stepOver(message.body.threadId);
+      : isStepOut
+        ? this.runtimeControl.stepOut(message.body.threadId)
+        : this.runtimeControl.stepOver(message.body.threadId);
     if (!accepted) {
       throw new SessionStateError('运行时拒绝单步执行。');
     }
 
-    this.pendingRunMode = isStepIn ? 'stepIn' : 'stepOver';
+    this.pendingRunMode = isStepIn
+      ? 'stepIn'
+      : isStepOut
+        ? 'stepOut'
+        : 'stepOver';
     this.stepOrigin = this.lastStopped
       ? {
           threadId: this.lastStopped.threadId,
@@ -742,6 +762,8 @@ export class TargetSessionMachine extends BaseSessionMachine {
       ? this.shouldStopForStepOver(point)
       : this.pendingRunMode === 'stepIn'
         ? this.shouldStopForStepIn(point)
+        : this.pendingRunMode === 'stepOut'
+          ? this.shouldStopForStepOut(point)
         : false;
 
     if (!shouldStopForBreakpoint && !shouldStopForStep) {
@@ -783,6 +805,15 @@ export class TargetSessionMachine extends BaseSessionMachine {
       && (point.frameId !== this.stepOrigin.frameId
         || point.sourceId !== this.stepOrigin.sourceId
         || point.row !== this.stepOrigin.row);
+  }
+
+  private shouldStopForStepOut(point: ExecutionPoint): boolean {
+    if (!this.stepOrigin) {
+      return true;
+    }
+
+    return point.threadId === this.stepOrigin.threadId
+      && point.frameId < this.stepOrigin.frameId;
   }
 
   private raiseStopped(reason: 'breakpoint' | 'step', point: ExecutionPoint): EventEnvelope<'stopped'> {

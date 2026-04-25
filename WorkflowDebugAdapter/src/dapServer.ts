@@ -213,6 +213,9 @@ export class WorkflowDebugDapServer {
         case 'stepIn':
           await this.handleStepRequest(message, 'stepIn');
           return;
+        case 'stepOut':
+          await this.handleStepRequest(message, 'stepOut');
+          return;
         case 'stackTrace':
           await this.handleStackTraceRequest(message);
           return;
@@ -355,12 +358,14 @@ export class WorkflowDebugDapServer {
     }
   }
 
-  private async handleStepRequest(message: DapRequestMessage, command: 'next' | 'stepIn'): Promise<void> {
+  private async handleStepRequest(message: DapRequestMessage, command: 'next' | 'stepIn' | 'stepOut'): Promise<void> {
     this.requirePaused();
     const args = this.parseContinueArguments(message.arguments);
     const request = command === 'next'
       ? this.adapter.createNext(args.threadId)
-      : this.adapter.createStepIn(args.threadId);
+      : command === 'stepIn'
+        ? this.adapter.createStepIn(args.threadId)
+        : this.adapter.createStepOut(args.threadId);
     await this.sendHostCommand(request);
     this.log(`已向宿主下发 ${command}：threadId=${args.threadId}。`);
     this.sendResponse(message, {});
@@ -673,6 +678,7 @@ export class WorkflowDebugDapServer {
       supportsLogPoints: false,
       supportsSetVariable: false,
       supportsStepBack: false,
+      supportsStepOut: true,
       supportsStepInTargetsRequest: false,
       supportsRestartRequest: true,
       supportsTerminateRequest: true,

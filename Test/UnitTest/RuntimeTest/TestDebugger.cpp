@@ -562,6 +562,71 @@ TEST_FILE
 		ResetDebuggerForCurrentThread();
 	});
 
+	TEST_CASE(L"调试器：单步跳出")
+	{
+		auto debugger = Ptr(new MultithreadDebugger(
+			[](MultithreadDebugger* debugger)
+			{
+				debugger->BeginExecution(false);
+				debugger->BeginExecution(true);
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::PauseByOperation);
+				TEST_ASSERT(debugger->GetLastActivatedBreakPoint() == WfDebugger::PauseBreakPoint);
+				TEST_ASSERT(debugger->GetCurrentPosition().start.row == 19);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->stackFrames.Count() == 1);
+
+				auto s = debugger->GetValueByName(L"s");
+				TEST_ASSERT((s.IsNull()));
+
+				TEST_ASSERT(debugger->StepOver());
+				TEST_ASSERT(debugger->GetState() == WfDebugger::Continue);
+				debugger->Continue();
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::PauseByOperation);
+				TEST_ASSERT(debugger->GetLastActivatedBreakPoint() == WfDebugger::PauseBreakPoint);
+				TEST_ASSERT(debugger->GetCurrentPosition().start.row == 20);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->stackFrames.Count() == 1);
+
+				s = debugger->GetValueByName(L"s");
+				TEST_ASSERT(UnboxValue<WString>(s) == L"zero");
+
+				TEST_ASSERT(debugger->StepInto());
+				TEST_ASSERT(debugger->GetState() == WfDebugger::Continue);
+				debugger->Continue();
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::PauseByOperation);
+				TEST_ASSERT(debugger->GetLastActivatedBreakPoint() == WfDebugger::PauseBreakPoint);
+				TEST_ASSERT(debugger->GetCurrentPosition().start.row == 4);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->stackFrames.Count() == 2);
+
+				TEST_ASSERT(debugger->StepOut());
+				TEST_ASSERT(debugger->GetState() == WfDebugger::Continue);
+				debugger->Continue();
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::PauseByOperation);
+				TEST_ASSERT(debugger->GetLastActivatedBreakPoint() == WfDebugger::PauseBreakPoint);
+				TEST_ASSERT(debugger->GetCurrentPosition().start.row == 21);
+				TEST_ASSERT(debugger->GetCurrentThreadContext()->stackFrames.Count() == 1);
+
+				s = debugger->GetValueByName(L"s");
+				TEST_ASSERT(UnboxValue<WString>(s) == L"one");
+
+				TEST_ASSERT(debugger->Run());
+				TEST_ASSERT(debugger->GetState() == WfDebugger::Continue);
+				debugger->Continue();
+
+				TEST_ASSERT(debugger->GetState() == WfDebugger::Stopped);
+			}));
+		SetDebuggerForCurrentThread(debugger);
+
+		auto context = CreateThreadContextFromSample(L"Function");
+
+		LoadFunction<void()>(context, L"<initialize>")();
+		auto result = LoadFunction<WString()>(context, L"Main")();
+		TEST_ASSERT(result == L"three");
+		ResetDebuggerForCurrentThread();
+	});
+
 	TEST_CASE(L"Test debugger: integration 1")
 	{
 		auto debugger = Ptr(new MultithreadDebugger(

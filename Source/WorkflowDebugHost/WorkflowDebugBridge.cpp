@@ -663,7 +663,7 @@ namespace vl
 					AddField(body.Obj(), L"supportsContinue", CreateLiteral(true));
 					AddField(body.Obj(), L"supportsStepOver", CreateLiteral(true));
 					AddField(body.Obj(), L"supportsStepIn", CreateLiteral(true));
-					AddField(body.Obj(), L"supportsStepOut", CreateLiteral(false));
+					AddField(body.Obj(), L"supportsStepOut", CreateLiteral(true));
 					AddField(body.Obj(), L"supportsStackTrace", CreateLiteral(true));
 					AddField(body.Obj(), L"supportsVariables", CreateLiteral(true));
 					return body;
@@ -771,6 +771,10 @@ namespace vl
 				if (envelope.command == L"stepIn")
 				{
 					return HandleStepIn(envelope);
+				}
+				if (envelope.command == L"stepOut")
+				{
+					return HandleStepOut(envelope);
 				}
 				if (envelope.command == L"stackTrace")
 				{
@@ -972,6 +976,24 @@ namespace vl
 				{
 					auto debugger = runtimeBinding->GetRemoteDebugger();
 					if (!debugger || !debugger->RequestStepInto())
+					{
+						return false;
+					}
+				}
+				if (state)
+				{
+					state->SetPhase(WorkflowDebugSessionPhase::Running);
+				}
+				return true;
+			}
+
+			bool WorkflowDebugBridge::HandleStepOut(const WorkflowDebugEnvelope& envelope)
+			{
+				(void)envelope;
+				if (runtimeBinding)
+				{
+					auto debugger = runtimeBinding->GetRemoteDebugger();
+					if (!debugger || !debugger->RequestStepOut())
 					{
 						return false;
 					}

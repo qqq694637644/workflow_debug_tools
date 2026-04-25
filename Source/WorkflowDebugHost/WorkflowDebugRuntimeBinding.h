@@ -48,6 +48,7 @@ namespace vl
 				bool							RequestStopOnEntry();
 				bool							RequestStepOver(bool beforeCodegen = true);
 				bool							RequestStepInto(bool beforeCodegen = true);
+				bool							RequestStepOut(bool beforeCodegen = true);
 
 			protected:
 				void							OnStartExecution() override;

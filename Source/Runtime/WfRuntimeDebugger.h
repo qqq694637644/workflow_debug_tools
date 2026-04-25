@@ -170,7 +170,7 @@ Debugger
 			/// When the target Workflow script stops,
 			/// this function will be called.
 			/// In this function,
-			/// one of <see cref="Run"/>, <see cref="Pause"/>, <see cref="Stop"/>, <see cref="StepOver"/> and <see cref="StepInto"/>
+			/// one of <see cref="Run"/>, <see cref="Pause"/>, <see cref="Stop"/>, <see cref="StepOver"/>, <see cref="StepInto"/> and <see cref="StepOut"/>
 			/// must be called to make the target Workflow script continues.
 			/// </p>
 			/// <p>
@@ -212,12 +212,13 @@ Debugger
 				///   <li><b><see cref="Stop"/></b>: If the Workflow script is not stopped, it stops the script by throwing in exception in the script.</li>
 				///   <li><b><see cref="StepOver"/></b>: Stop over to the next code line and pause. It doesn't jump into the function to be called.</li>
 				///   <li><b><see cref="StepInto"/></b>: Stop into the new code line and pause.</li>
+				///   <li><b><see cref="StepOut"/></b>: Stop when the current function returns to its caller and pause.</li>
 				/// </ul>
 				/// Operations are expected to be called in <see cref="OnBlockExecution"/>.
 				/// </p>
 				/// </remarks>
 				enum State
-				{						//		Run		Pause	Stop	StepOver	StepInto
+				{						//		Run		Pause	Stop	StepOver	StepInto	StepOut
 					/// <summary>The associated thread is running Workflow script.</summary>
 					Running,			// R			*RTP	*RTS
 					/// <summary>The target Workflow script is paused by operations other than break points.</summary>
@@ -239,6 +240,7 @@ Debugger
 					RunUntilBreakPoint,
 					RunStepOver,
 					RunStepInto,
+					RunStepOut,
 				};
 
 				struct InstructionLocation
@@ -250,6 +252,7 @@ Debugger
 
 					bool								BreakStepOver(const InstructionLocation& il, bool beforeCodegen);
 					bool								BreakStepInto(const InstructionLocation& il, bool beforeCodegen);
+					bool								BreakStepOut(const InstructionLocation& il, bool beforeCodegen);
 				};
 
 				static const vint						InvalidBreakPoint = -1;
@@ -366,6 +369,10 @@ Debugger
 				/// <returns>Returns true if this operation is succeeded.</returns>
 				/// <param name="beforeCodegen">Set to true to apply the source code information to original source code.</param>
 				bool									StepInto(bool beforeCodegen = true);
+				/// <summary>Run until the current function returns to its caller and pause.</summary>
+				/// <returns>Returns true if this operation is succeeded.</returns>
+				/// <param name="beforeCodegen">Set to true to apply the source code information to original source code.</param>
+				bool									StepOut(bool beforeCodegen = true);
 				/// <summary>Get the current state of the debugger.</summary>
 				/// <returns>The state of the debugger.</returns>
 				State									GetState();

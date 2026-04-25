@@ -64,6 +64,7 @@ namespace vl
 				bool								HandleContinue(const WorkflowDebugEnvelope& envelope);
 				bool								HandleNext(const WorkflowDebugEnvelope& envelope);
 				bool								HandleStepIn(const WorkflowDebugEnvelope& envelope);
+				bool								HandleStepOut(const WorkflowDebugEnvelope& envelope);
 				bool								HandleStackTrace(const WorkflowDebugEnvelope& envelope);
 				bool								HandleScopes(const WorkflowDebugEnvelope& envelope);
 				bool								HandleVariables(const WorkflowDebugEnvelope& envelope);

@@ -145,6 +145,16 @@ InstructionLocation
 				return false;
 			}
 
+			bool WfDebugger::InstructionLocation::BreakStepOut(const InstructionLocation& il, bool beforeCodegen)
+			{
+				(void)beforeCodegen;
+				if (contextIndex != il.contextIndex) return contextIndex > il.contextIndex;
+				if (assembly != il.assembly) return true;
+				if (stackFrameIndex != il.stackFrameIndex) return stackFrameIndex > il.stackFrameIndex;
+
+				return false;
+			}
+
 /***********************************************************************
 WfDebugger Callback Handlers
 ***********************************************************************/
@@ -297,6 +307,9 @@ WfDebugger Callback Handlers
 						break;
 					case RunStepInto:
 						needToBreak = instructionLocationSnapshot.BreakStepInto(il, stepBeforeCodegenSnapshot);
+						break;
+					case RunStepOut:
+						needToBreak = instructionLocationSnapshot.BreakStepOut(il, stepBeforeCodegenSnapshot);
 						break;
 					default:;
 					}
@@ -741,6 +754,25 @@ WfDebugger Operations
 						instructionLocation = MakeCurrentInstructionLocation();
 					}
 					runningType = RunStepInto;
+					stepBeforeCodegen = beforeCodegen;
+					return true;
+				}
+			}
+
+			bool WfDebugger::StepOut(bool beforeCodegen)
+			{
+				SPIN_LOCK(g_debuggerStateLock)
+				{
+					if (state != PauseByOperation && state != PauseByBreakPoint && state != Stopped)
+					{
+						return false;
+					}
+					if (state != Stopped)
+					{
+						state = Continue;
+						instructionLocation = MakeCurrentInstructionLocation();
+					}
+					runningType = RunStepOut;
 					stepBeforeCodegen = beforeCodegen;
 					return true;
 				}
