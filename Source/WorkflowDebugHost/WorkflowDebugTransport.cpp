@@ -354,21 +354,33 @@ namespace vl
 					}
 
 					SOCKET connectedSocket = INVALID_SOCKET;
-					for (auto current = addressInfo; current != nullptr; current = current->ai_next)
+					// 调试会话是先起适配器再起宿主的，VSCode 任务和宿主启动之间会有短暂竞态。
+					// 这里做一个有限重试，避免把“端口稍晚才开始监听”误判成连接失败。
+					for (vint retry = 0; retry < 40 && connectedSocket == INVALID_SOCKET && !closing; retry++)
 					{
-						connectedSocket = socket((int)current->ai_family, (int)current->ai_socktype, (int)current->ai_protocol);
-						if (connectedSocket == INVALID_SOCKET)
+						for (auto current = addressInfo; current != nullptr; current = current->ai_next)
 						{
-							continue;
+							connectedSocket = socket((int)current->ai_family, (int)current->ai_socktype, (int)current->ai_protocol);
+							if (connectedSocket == INVALID_SOCKET)
+							{
+								continue;
+							}
+
+							if (connect(connectedSocket, current->ai_addr, (int)current->ai_addrlen) == 0)
+							{
+								break;
+							}
+
+							closesocket(connectedSocket);
+							connectedSocket = INVALID_SOCKET;
 						}
 
-						if (connect(connectedSocket, current->ai_addr, (int)current->ai_addrlen) == 0)
+						if (connectedSocket != INVALID_SOCKET || closing)
 						{
 							break;
 						}
 
-						closesocket(connectedSocket);
-						connectedSocket = INVALID_SOCKET;
+						std::this_thread::sleep_for(std::chrono::milliseconds(50));
 					}
 					FreeAddrInfoW(addressInfo);
 

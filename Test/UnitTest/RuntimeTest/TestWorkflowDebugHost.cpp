@@ -138,6 +138,24 @@ static SOCKET CreateLoopbackListener(vint& port)
 	return listenSocket;
 }
 
+static SOCKET CreateLoopbackListenerOnPort(vint port)
+{
+	WSADATA wsaData;
+	TEST_ASSERT(WSAStartup(MAKEWORD(2, 2), &wsaData) == 0);
+
+	auto listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	TEST_ASSERT(listenSocket != INVALID_SOCKET);
+
+	sockaddr_in address = {};
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	address.sin_port = htons((u_short)port);
+
+	TEST_ASSERT(bind(listenSocket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+	TEST_ASSERT(listen(listenSocket, 1) == 0);
+	return listenSocket;
+}
+
 class TestRemoteWfDebugger : public RemoteWfDebugger
 {
 public:
@@ -505,6 +523,49 @@ TEST_FILE
 		TEST_ASSERT(serverFailed.load() == false);
 		TEST_ASSERT(serverSucceeded.load() == true);
 		TEST_ASSERT(requestLineMatched == true);
+	});
+
+	TEST_CASE(L"WorkflowDebugTransport 连接重试")
+	{
+		vint port = 0;
+		auto reservedSocket = CreateLoopbackListener(port);
+		TEST_ASSERT(reservedSocket != INVALID_SOCKET);
+		closesocket(reservedSocket);
+		WSACleanup();
+
+		std::atomic<bool> serverStarted = false;
+		std::atomic<bool> serverAccepted = false;
+		std::thread serverThread([&]()
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+			auto listenSocket = CreateLoopbackListenerOnPort(port);
+			serverStarted = true;
+
+			auto clientSocket = accept(listenSocket, nullptr, nullptr);
+			if (clientSocket != INVALID_SOCKET)
+			{
+				serverAccepted = true;
+				shutdown(clientSocket, SD_BOTH);
+				closesocket(clientSocket);
+			}
+
+			shutdown(listenSocket, SD_BOTH);
+			closesocket(listenSocket);
+			WSACleanup();
+		});
+
+		WorkflowDebugTransport transport;
+		TEST_ASSERT(transport.Connect(L"127.0.0.1", port) == true);
+		transport.Close();
+
+		TEST_ASSERT(WaitForFlag(serverStarted, 2000) == true);
+		TEST_ASSERT(WaitForFlag(serverAccepted, 2000) == true);
+
+		if (serverThread.joinable())
+		{
+			serverThread.join();
+		}
 	});
 
 	TEST_CASE(L"WorkflowDebugStackInspector 和变量检查器")
