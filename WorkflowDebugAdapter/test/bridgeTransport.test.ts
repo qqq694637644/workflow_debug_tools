@@ -130,8 +130,7 @@ async function verifyBridgeRoundTripAndClose(): Promise<void> {
         sessionId,
         'disconnect',
         {
-          reason: 'manual-close',
-          restart: false
+          reason: 'manual-close'
         },
         3
       )

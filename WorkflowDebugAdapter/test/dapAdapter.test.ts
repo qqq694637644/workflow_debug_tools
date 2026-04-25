@@ -399,12 +399,12 @@ class DapClient {
 
 async function startFakeHost(port: number): Promise<{
   readonly runtimeControl: RecordingRuntimeControl;
-  readonly disconnectRequests: Array<{ readonly reason: string; readonly restart: boolean }>;
-  notifyDisconnect(reason?: string, restart?: boolean): Promise<void>;
+  readonly disconnectRequests: Array<{ readonly reason: string }>;
+  notifyDisconnect(reason?: string): Promise<void>;
   close(): Promise<void>;
 }> {
   const runtimeControl = new RecordingRuntimeControl();
-  const disconnectRequests: Array<{ readonly reason: string; readonly restart: boolean }> = [];
+  const disconnectRequests: Array<{ readonly reason: string }> = [];
   const target = new TargetSessionMachine({
     runtimeVersion: '0.1.0',
     capabilities: DEFAULT_CAPABILITIES,
@@ -554,8 +554,7 @@ async function startFakeHost(port: number): Promise<{
         if (message.type === 'request' && message.cmd === 'disconnect') {
           const disconnectRequest = message as RequestEnvelope<'disconnect'>;
           disconnectRequests.push({
-            reason: disconnectRequest.body.reason,
-            restart: disconnectRequest.body.restart
+            reason: disconnectRequest.body.reason
           });
         }
       })().catch((error) => {
@@ -570,10 +569,9 @@ async function startFakeHost(port: number): Promise<{
   return {
     runtimeControl,
     disconnectRequests,
-    async notifyDisconnect(reason = '会话关闭', restart = false): Promise<void> {
+    async notifyDisconnect(reason = '会话关闭'): Promise<void> {
       await sendEnvelope(createEventEnvelope(hello.sessionId, 'disconnect', {
-        reason,
-        restart
+        reason
       }, Date.now()));
     },
     async close(): Promise<void> {
@@ -599,7 +597,6 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       adapterID: 'workflow'
     });
     assert.equal(initializeResponse.success, true);
-    assert.equal((initializeResponse.body as { readonly supportsRestartRequest?: boolean } | undefined)?.supportsRestartRequest, true);
     assert.equal((initializeResponse.body as { readonly supportsStepOut?: boolean } | undefined)?.supportsStepOut, true);
     assert.equal((initializeResponse.body as { readonly supportsVariableType?: boolean } | undefined)?.supportsVariableType, true);
     assert.equal((initializeResponse.body as { readonly supportsEvaluateForHovers?: boolean } | undefined)?.supportsEvaluateForHovers, true);
@@ -849,7 +846,8 @@ async function verifyWorkflowDebugAdapterPluginFlow(): Promise<void> {
       ]);
 
       const restartResponse = await client.request('restart');
-      assert.equal(restartResponse.success, true);
+      assert.equal(restartResponse.success, false);
+      assert.match(restartResponse.message ?? '', /restart/);
       await delay(100);
       assert.deepEqual(host.disconnectRequests, []);
       const terminatedEvents = client.getReceivedMessages().filter((message) => message.type === 'event' && message.event === 'terminated');
@@ -893,14 +891,11 @@ async function verifyDisconnectAfterHostClosedIsIdempotent(): Promise<void> {
     const host = await startFakeHost(port);
     try {
       await client.waitForEvent('initialized');
-      await host.notifyDisconnect('会话关闭', false);
+      await host.notifyDisconnect('会话关闭');
 
       const terminated = await client.waitForEvent('terminated');
-      assert.equal((terminated.body as { readonly restart?: boolean } | undefined)?.restart, false);
 
-      const disconnectResponse = await client.request('disconnect', {
-        restart: false
-      });
+      const disconnectResponse = await client.request('disconnect');
       assert.equal(disconnectResponse.success, true);
       assert.deepEqual(host.disconnectRequests, []);
     }

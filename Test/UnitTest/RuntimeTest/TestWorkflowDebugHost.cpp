@@ -898,7 +898,7 @@ TEST_FILE
 		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"type\":\"event\""));
 		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"cmd\":\"disconnect\""));
 		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"reason\":\"会话关闭\""));
-		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"restart\":false"));
+		TEST_ASSERT(ContainsSubstring(disconnectLine, L"\"restart\"") == false);
 		TEST_ASSERT(session.GetTransport()->IsOpen() == false);
 	});
 

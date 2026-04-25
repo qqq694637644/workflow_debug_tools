@@ -6,7 +6,6 @@ function verifyShutdownPolicy(): void {
   assert.equal(shouldFailPendingRequestsOnShutdown('attach timeout'), true);
   assert.equal(shouldFailPendingRequestsOnShutdown('stdin closed'), false);
   assert.equal(shouldFailPendingRequestsOnShutdown('disconnect'), false);
-  assert.equal(shouldFailPendingRequestsOnShutdown('restart'), false);
 }
 
 verifyShutdownPolicy();

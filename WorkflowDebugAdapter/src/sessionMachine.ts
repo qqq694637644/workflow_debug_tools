@@ -393,11 +393,10 @@ export class AdapterSessionMachine extends BaseSessionMachine {
     return request;
   }
 
-  public createDisconnect(reason: string, restart: boolean): RequestEnvelope<'disconnect'> {
+  public createDisconnect(reason: string): RequestEnvelope<'disconnect'> {
     this.requirePhase(['negotiating', 'initializing', 'ready', 'paused', 'running'], '只能在调试会话建立后断开。');
     return this.createRequest('disconnect', {
-      reason,
-      restart
+      reason
     });
   }
 

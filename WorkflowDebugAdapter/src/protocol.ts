@@ -203,7 +203,6 @@ export interface OutputBody {
 
 export interface DisconnectBody {
   readonly reason: string;
-  readonly restart: boolean;
 }
 
 export interface ErrorBody {

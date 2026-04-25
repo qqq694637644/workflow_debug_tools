@@ -607,11 +607,10 @@ namespace vl
 					return body;
 				}
 
-				static Ptr<JsonNode> BuildDisconnectBody(const WString& reason, bool restart)
+				static Ptr<JsonNode> BuildDisconnectBody(const WString& reason)
 				{
 					auto body = CreateObject();
 					AddField(body.Obj(), L"reason", CreateString(reason.Length() > 0 ? reason : L"会话关闭"));
-					AddField(body.Obj(), L"restart", CreateLiteral(restart));
 					return body;
 				}
 
@@ -995,14 +994,11 @@ if (envelope.command == L"disconnect")
 			{
 				auto body = ParseJsonObject(envelope.body);
 				WString reason = L"disconnect";
-				bool restart = false;
 				if (body)
 				{
 					TryReadStringField(body.Obj(), L"reason", reason);
-					TryReadOptionalBooleanField(body.Obj(), L"restart", restart);
 				}
 
-				(void)restart;
 				if (runtimeBinding)
 				{
 					auto debugger = runtimeBinding->GetRemoteDebugger();
@@ -1012,7 +1008,7 @@ if (envelope.command == L"disconnect")
 					}
 				}
 
-				return NotifyDisconnect(reason, restart);
+				return NotifyDisconnect(reason);
 			}
 
 			bool WorkflowDebugBridge::NotifyStopped()
@@ -1025,14 +1021,14 @@ if (envelope.command == L"disconnect")
 				return SendEvent(state, transport, L"output", BuildOutputBody(level, message));
 			}
 
-			bool WorkflowDebugBridge::NotifyDisconnect(const WString& reason, bool restart)
+			bool WorkflowDebugBridge::NotifyDisconnect(const WString& reason)
 			{
 				if (state)
 				{
 					state->SetPhase(WorkflowDebugSessionPhase::Closed);
 				}
 				// 正常结束时先通知适配器，再关闭底层连接，避免 VSCode 把收尾当成异常断开。
-				return SendEvent(state, transport, L"disconnect", BuildDisconnectBody(reason, restart));
+				return SendEvent(state, transport, L"disconnect", BuildDisconnectBody(reason));
 			}
 
 			bool WorkflowDebugBridge::NotifyHello(const WString& runtimeVersion, const collections::List<WorkflowDebugSourceRecord>& sourceMap)

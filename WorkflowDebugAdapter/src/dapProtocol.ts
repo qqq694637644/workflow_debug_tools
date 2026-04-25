@@ -76,10 +76,6 @@ export interface WorkflowInitializeArguments {
   readonly adapterID?: string;
 }
 
-export interface WorkflowConfigurationDoneArguments {
-  readonly restart?: boolean;
-}
-
 export interface WorkflowContinueArguments {
   readonly threadId: number;
 }
@@ -115,10 +111,6 @@ export interface WorkflowEvaluateResponseBody {
 export interface WorkflowSetBreakpointsArguments {
   readonly source: DapSource;
   readonly breakpoints?: ReadonlyArray<DapBreakpoint>;
-}
-
-export interface WorkflowThreadsArguments {
-  readonly restart?: boolean;
 }
 
 export interface WorkflowOutputEventBody {

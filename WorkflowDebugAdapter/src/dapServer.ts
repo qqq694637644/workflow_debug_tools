@@ -21,10 +21,8 @@ import {
   type WorkflowScopesArguments,
   type WorkflowSetBreakpointsArguments,
   type WorkflowStackTraceArguments,
-  type WorkflowThreadsArguments,
   type WorkflowVariablesArguments,
-  type WorkflowInitializeArguments,
-  type WorkflowConfigurationDoneArguments
+  type WorkflowInitializeArguments
 } from './dapProtocol.js';
 import { type ScopeModelEntry, type ScopeModelState } from './scopeModel.js';
 import { type VariableModelEntry, type VariableModelState } from './variableModel.js';
@@ -237,7 +235,7 @@ export class WorkflowDebugDapServer {
           await this.handleDisconnectRequest(message);
           return;
         case 'restart':
-          await this.handleRestartRequest(message);
+          this.sendErrorResponse(message, '当前版本不支持 restart。');
           return;
         case 'setExceptionBreakpoints':
           this.sendResponse(message, {});
@@ -776,27 +774,18 @@ export class WorkflowDebugDapServer {
     const sessionAlreadyClosed = this.adapter.snapshot().phase === 'closed';
     this.gracefulClose = true;
     this.terminated = true;
-    const restart = this.parseBooleanArgument(message.arguments, 'restart', false);
     if (!sessionAlreadyClosed) {
-      await this.requestHostDisconnect(restart ? 'restart' : 'disconnect', restart);
+      await this.requestHostDisconnect('disconnect');
     }
     else {
       this.log('宿主已经关闭调试会话，跳过反向下发 disconnect。');
     }
     this.sendResponse(message, {});
     if (!sessionAlreadyClosed) {
-      this.sendEvent('terminated', {
-        restart
-      });
+      this.sendEvent('terminated', {});
     }
     this.cancelReadyWait();
     void this.disposeTransport();
-  }
-
-  private async handleRestartRequest(message: DapRequestMessage): Promise<void> {
-    this.log('收到 restart。');
-    this.sendResponse(message, {});
-    this.log('restartRequest 当前保持为兼容 LuaPanda 的空操作，不主动终结会话。');
   }
 
   private installTransportHandlers(transport: BridgeTransport<ProtocolEnvelope>): void {
@@ -941,12 +930,10 @@ export class WorkflowDebugDapServer {
       if (message.type === 'event' && message.cmd === 'disconnect') {
         this.adapter.receiveDisconnect(message as EventEnvelope<'disconnect'>);
         const disconnectBody = message as EventEnvelope<'disconnect'>;
-        this.log(`收到宿主断开事件：reason=${disconnectBody.body.reason} restart=${disconnectBody.body.restart}。`);
+        this.log(`收到宿主断开事件：reason=${disconnectBody.body.reason}。`);
         if (!this.gracefulClose && !this.terminated) {
           this.terminated = true;
-          this.sendEvent('terminated', {
-            restart: disconnectBody.body.restart
-          });
+          this.sendEvent('terminated', {});
         }
         this.cancelReadyWait();
         return;
@@ -980,14 +967,14 @@ export class WorkflowDebugDapServer {
     await transport.send(request);
   }
 
-  private async requestHostDisconnect(reason: string, restart: boolean): Promise<void> {
+  private async requestHostDisconnect(reason: string): Promise<void> {
     if (!this.transport) {
       return;
     }
 
     try {
-      await this.sendHostCommand(this.adapter.createDisconnect(reason, restart));
-      this.log(`已向宿主下发 disconnect：reason=${reason} restart=${restart}。`);
+      await this.sendHostCommand(this.adapter.createDisconnect(reason));
+      this.log(`已向宿主下发 disconnect：reason=${reason}。`);
     }
     catch (error) {
       this.log(`向宿主下发 disconnect 失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
@@ -1008,7 +995,6 @@ export class WorkflowDebugDapServer {
       supportsStepBack: false,
       supportsStepOut: true,
       supportsStepInTargetsRequest: false,
-      supportsRestartRequest: true,
       supportsTerminateRequest: true,
       supportsThreadsRequest: true,
       supportsStackTraceRequest: true,
