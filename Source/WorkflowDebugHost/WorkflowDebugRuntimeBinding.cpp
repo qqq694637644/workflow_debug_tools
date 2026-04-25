@@ -294,6 +294,17 @@ namespace vl
 				return succeeded;
 			}
 
+			bool RemoteWfDebugger::BreakIns(runtime::WfAssembly* assembly, vint instruction)
+			{
+				// stopOnEntry 如果命中了内部帧，直接放行，让运行时继续走到第一条可映射源码语句。
+				if (binding && binding->ShouldDelayStopOnEntry())
+				{
+					return false;
+				}
+
+				return WfDebugger::BreakIns(assembly, instruction);
+			}
+
 			bool RemoteWfDebugger::RequestStepOver(bool beforeCodegen)
 			{
 				auto succeeded = StepOver(beforeCodegen);
@@ -481,6 +492,33 @@ namespace vl
 				return succeeded;
 			}
 
+			bool WorkflowDebugRuntimeBinding::ShouldDelayStopOnEntry() const
+			{
+				if (!stopOnEntryPending.load())
+				{
+					return false;
+				}
+
+				if (!remoteDebugger || !sourceCatalog)
+				{
+					return false;
+				}
+
+				// 入口暂停只接受能映射到源码的当前位置；如果当前帧还是内部初始化帧，就继续跑到下一条可映射语句。
+				auto context = remoteDebugger->GetCurrentThreadContext();
+				if (!context || context->stackFrames.Count() == 0)
+				{
+					return true;
+				}
+
+				auto frameId = context->stackFrames.Count() - 1;
+				auto position = remoteDebugger->GetCurrentPosition(true, context, frameId);
+				WorkflowDebugStackFrame frame;
+				frame.threadId = FindThreadId(remoteDebugger.Obj(), context);
+				frame.frameId = frameId;
+				return !TryBuildStackFrameFromPosition(frame, position, sourceCatalog);
+			}
+
 			bool WorkflowDebugRuntimeBinding::IsBound() const
 			{
 				return debugger != nullptr;
@@ -600,11 +638,11 @@ namespace vl
 					{
 						reason = L"breakpoint";
 					}
-					else if (debuggerObject->GetRunningType() != runtime::WfDebugger::RunUntilBreakPoint)
-					{
-						reason = L"step";
-					}
-					else if (stopOnEntryPending)
+				else if (debuggerObject->GetRunningType() != runtime::WfDebugger::RunUntilBreakPoint)
+				{
+					reason = L"step";
+				}
+				else if (stopOnEntryPending)
 					{
 						reason = L"entry";
 						stopOnEntryPending = false;

@@ -836,8 +836,7 @@ namespace vl
 
 					if (stopOnEntry && runtimeBinding)
 					{
-						// 参考 LuaPanda 的 attach 语义：连接完成后先把运行时置为入口暂停，
-						// 这样脚本第一次进入可执行点时就会自动停住。
+						// stopOnEntry 不是停在宿主初始化帧，而是等到第一条能映射到源码的可执行语句再停住。
 						if (!runtimeBinding->RequestStopOnEntry())
 						{
 							return false;

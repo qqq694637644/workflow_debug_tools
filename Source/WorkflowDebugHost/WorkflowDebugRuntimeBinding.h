@@ -11,6 +11,7 @@ Workflow::DebugHost
 
 #include "WorkflowDebugProtocol.h"
 #include "../Runtime/WfRuntimeDebugger.h"
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 
@@ -51,6 +52,7 @@ namespace vl
 				bool							RequestStepOut(bool beforeCodegen = true);
 
 			protected:
+				bool							BreakIns(runtime::WfAssembly* assembly, vint instruction) override;
 				void							OnStartExecution() override;
 				void							OnBlockExecution() override;
 				void							OnStopExecution() override;
@@ -91,9 +93,13 @@ namespace vl
 				void								CapturePausedState();
 
 			private:
+				friend class RemoteWfDebugger;
+
+				bool								ShouldDelayStopOnEntry() const;
+
 				Ptr<runtime::WfDebugger>			debugger;
 				Ptr<RemoteWfDebugger>				remoteDebugger;
-				bool								stopOnEntryPending = false;
+				std::atomic<bool>					stopOnEntryPending = false;
 				WorkflowDebugSessionState*			state = nullptr;
 				WorkflowDebugSourceCatalog*			sourceCatalog = nullptr;
 				WorkflowDebugBreakpointRegistry*	breakpointRegistry = nullptr;

@@ -16,6 +16,55 @@ namespace vl
 	{
 		namespace debughost
 		{
+			namespace
+			{
+				static WString NormalizeSourcePath(const WString& sourcePath)
+				{
+					if (sourcePath.Length() == 0)
+					{
+						return sourcePath;
+					}
+
+					// 断点清理和匹配必须使用同一套路径 key，否则同一个文件会因为斜杠差异残留旧断点。
+					if (sourcePath.Length() >= 17 && sourcePath.Left(17) == L"unknown://source/")
+					{
+						return sourcePath;
+					}
+
+					collections::Array<wchar_t> normalized(sourcePath.Length());
+					for (vint i = 0; i < sourcePath.Length(); i++)
+					{
+						auto ch = sourcePath[i];
+						if (ch == L'\\')
+						{
+							ch = L'/';
+						}
+						normalized[i] = ch;
+					}
+
+					if (normalized.Count() >= 2
+						&& normalized[1] == L':'
+						&& normalized[0] >= L'A'
+						&& normalized[0] <= L'Z')
+					{
+						normalized[0] = (wchar_t)(normalized[0] - L'A' + L'a');
+					}
+
+					vint length = normalized.Count();
+					while (length > 1 && normalized[length - 1] == L'/')
+					{
+						length--;
+					}
+
+					if (length == 0)
+					{
+						return WString::Empty;
+					}
+
+					return WString::CopyFrom(&normalized[0], length);
+				}
+			}
+
 			WorkflowDebugBreakpointRegistry::WorkflowDebugBreakpointRegistry(WorkflowDebugSourceCatalog* catalog)
 				:sourceCatalog(catalog)
 			{
@@ -42,9 +91,11 @@ namespace vl
 					return;
 				}
 
+				auto normalizedPath = NormalizeSourcePath(sourcePath);
+
 				for (vint i = breakpoints.Count() - 1; i >= 0; --i)
 				{
-					if (breakpoints[i].sourcePath == sourcePath)
+					if (NormalizeSourcePath(breakpoints[i].sourcePath) == normalizedPath)
 					{
 						breakpoints.RemoveAt(i);
 					}
@@ -64,9 +115,10 @@ namespace vl
 
 				if (sourceCatalog && record.sourcePath.Length() > 0)
 				{
+					auto normalizedPath = NormalizeSourcePath(record.sourcePath);
 					vint resolvedCodeIndex = -1;
 					vint resolvedRow = 0;
-					if (sourceCatalog->ResolveByPath(record.sourcePath, resolvedCodeIndex, resolvedRow))
+					if (sourceCatalog->ResolveByPath(normalizedPath, resolvedCodeIndex, resolvedRow))
 					{
 						(void)resolvedRow;
 						if (record.codeIndex < 0)

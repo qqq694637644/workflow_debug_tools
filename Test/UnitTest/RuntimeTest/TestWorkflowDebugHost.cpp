@@ -141,6 +141,21 @@ static SOCKET CreateLoopbackListener(vint& port)
 class TestRemoteWfDebugger : public RemoteWfDebugger
 {
 public:
+	bool CallBreakIns(runtime::WfAssembly* assembly, vint instruction)
+	{
+		return BreakIns(assembly, instruction);
+	}
+
+	void AttachThreadContext(runtime::WfRuntimeThreadContext* context)
+	{
+		EnterThreadContext(context);
+	}
+
+	void DetachThreadContext(runtime::WfRuntimeThreadContext* context)
+	{
+		LeaveThreadContext(context);
+	}
+
 	bool WaitForContinueOnce()
 	{
 		return WaitForContinue();
@@ -218,13 +233,13 @@ TEST_FILE
 		TEST_ASSERT(resolvedRow == 12);
 
 		vint resolvedCodeIndex = -1;
-		TEST_ASSERT(catalog.ResolveByPath(L"D:/src/main.wf", resolvedCodeIndex, resolvedRow) == true);
+		TEST_ASSERT(catalog.ResolveByPath(L"d:\\src\\main.wf", resolvedCodeIndex, resolvedRow) == true);
 		TEST_ASSERT(resolvedCodeIndex == 7);
 		TEST_ASSERT(resolvedRow == 12);
 
 		WorkflowDebugBreakpointRegistry registry(&catalog);
 		WorkflowDebugBreakpointRecord breakpoint;
-		breakpoint.sourcePath = L"D:/src/main.wf";
+		breakpoint.sourcePath = L"d:\\src\\main.wf";
 		breakpoint.row = 28;
 		breakpoint.condition = L"x > 0";
 		breakpoint.logMessage = L"hit";
@@ -240,6 +255,8 @@ TEST_FILE
 		TEST_ASSERT(breakpoints[0].reason == L"");
 		TEST_ASSERT(registry.HasBreakpoint(7, 28) == true);
 		TEST_ASSERT(registry.HasBreakpoint(7, 12) == false);
+		registry.ClearSource(L"D:/src/main.wf");
+		TEST_ASSERT(registry.Count() == 0);
 	});
 
 	TEST_CASE(L"WorkflowDebugTransport 收发")
@@ -282,6 +299,77 @@ TEST_FILE
 		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::RequiredToPause);
 
 		binding.Unbind();
+	});
+
+	TEST_CASE(L"WorkflowDebugRuntimeBinding 入口暂停跳过未知帧")
+	{
+		auto CreateContext = []()
+		{
+			List<WString> moduleCodes;
+			moduleCodes.Add(LoadSample(L"Debugger", L"Assignment"));
+			List<glr::ParsingError> errors;
+			auto assembly = Compile(GetWorkflowParser(), WfCpuArchitecture::AsExecutable, moduleCodes, errors);
+			TEST_ASSERT(assembly && errors.Count() == 0);
+			return Ptr(new WfRuntimeGlobalContext(assembly));
+		};
+
+		auto context = CreateContext();
+		auto assembly = context->assembly;
+		TEST_ASSERT(assembly->functions.Count() > 0);
+
+		auto functionIndex = assembly->functionByName[L"Main"][0];
+		auto function = assembly->functions[functionIndex];
+		TEST_ASSERT(function->lastInstruction > function->firstInstruction);
+
+		auto unknownInstruction = function->firstInstruction;
+		auto knownInstruction = unknownInstruction + 1;
+		TEST_ASSERT(knownInstruction < assembly->insBeforeCodegen->instructionCodeMapping.Count());
+
+		assembly->insBeforeCodegen->instructionCodeMapping[unknownInstruction].codeIndex = -1;
+		assembly->insBeforeCodegen->instructionCodeMapping[unknownInstruction].start.row = -1;
+		assembly->insBeforeCodegen->instructionCodeMapping[unknownInstruction].start.column = -1;
+		assembly->insBeforeCodegen->instructionCodeMapping[knownInstruction].codeIndex = 99;
+		assembly->insBeforeCodegen->instructionCodeMapping[knownInstruction].start.row = 12;
+		assembly->insBeforeCodegen->instructionCodeMapping[knownInstruction].start.column = 3;
+		assembly->insBeforeCodegen->instructionCodeMapping[knownInstruction].end.row = 12;
+		assembly->insBeforeCodegen->instructionCodeMapping[knownInstruction].end.column = 3;
+
+		WorkflowDebugSourceCatalog catalog;
+		TEST_ASSERT(catalog.RegisterSource(99, L"D:/src/main.wf", 12));
+
+		WorkflowDebugSessionState state;
+		state.Attach(L"wf-stop-on-entry");
+
+		Ptr<TestRemoteWfDebugger> debugger = Ptr(new TestRemoteWfDebugger);
+		Ptr<runtime::WfDebugger> debuggerBase = debugger;
+		WorkflowDebugRuntimeBinding binding;
+		binding.Bind(debuggerBase);
+		binding.AttachDebugData(&state, &catalog, nullptr, nullptr, nullptr, nullptr);
+		binding.SetAssembly(assembly);
+
+		WfRuntimeThreadContext threadContext(context);
+		TEST_ASSERT(threadContext.PushStackFrame(functionIndex, 0) == WfRuntimeThreadContextError::Success);
+		threadContext.GetCurrentStackFrame().nextInstructionIndex = unknownInstruction;
+		debugger->AttachThreadContext(&threadContext);
+
+		TEST_ASSERT(binding.RequestStopOnEntry() == true);
+		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::RequiredToPause);
+		TEST_ASSERT(debugger->CallBreakIns(assembly.Obj(), unknownInstruction) == false);
+		TEST_ASSERT(debugger->GetState() == runtime::WfDebugger::RequiredToPause);
+		TEST_ASSERT(state.Snapshot().lastStoppedReason == L"");
+
+		threadContext.GetCurrentStackFrame().nextInstructionIndex = knownInstruction;
+		TEST_ASSERT(debugger->CallBreakIns(assembly.Obj(), knownInstruction) == true);
+		binding.CapturePausedState();
+
+		auto snapshot = state.Snapshot();
+		TEST_ASSERT(snapshot.lastStoppedReason == L"entry");
+		TEST_ASSERT(snapshot.lastStoppedSourceId == 99);
+		TEST_ASSERT(snapshot.lastStoppedRow == 12);
+
+		debugger->DetachThreadContext(&threadContext);
+		binding.Unbind();
+		state.Detach();
 	});
 
 	TEST_CASE(L"WorkflowDebugTransport TCP 收发")
