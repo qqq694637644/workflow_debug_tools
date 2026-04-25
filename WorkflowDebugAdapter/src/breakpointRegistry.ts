@@ -14,16 +14,8 @@ export class BreakpointRegistry {
 
   constructor(private readonly sourceCatalog: SourceCatalog) {}
 
-  public applyBreakpoints(
-    sourcePath: string,
-    breakpoints: ReadonlyArray<SourceBreakpointInput>
-  ): SetBreakpointsBody {
-    const result = mapBreakpoints(
-      this.sourceCatalog,
-      sourcePath,
-      breakpoints,
-      this.createBreakpointId
-    );
+  public applyBreakpoints(sourcePath: string, breakpoints: ReadonlyArray<SourceBreakpointInput>): SetBreakpointsBody {
+    const result = mapBreakpoints(this.sourceCatalog, sourcePath, breakpoints, this.createBreakpointId);
 
     this.clearSource(result.sourcePath);
     for (const state of result.states) {
@@ -51,6 +43,7 @@ export class BreakpointRegistry {
     for (const breakpoint of body.breakpoints) {
       const verified = this.sourceCatalog.hasRow(body.codeIndex, breakpoint.row);
       const reason = verified ? undefined : `源码 ${body.sourcePath} 不包含第 ${breakpoint.row + 1} 行。`;
+
       const state: BreakpointSyncState = {
         breakpointId: breakpoint.breakpointId,
         requestedSourcePath: body.sourcePath,
@@ -58,9 +51,6 @@ export class BreakpointRegistry {
         codeIndex: body.codeIndex,
         line: breakpoint.row + 1,
         row: breakpoint.row,
-        column: breakpoint.column,
-        condition: breakpoint.condition,
-        logMessage: breakpoint.logMessage,
         verified,
         reason
       };
@@ -83,10 +73,6 @@ export class BreakpointRegistry {
       .sort((left, right) => {
         if (left.line !== right.line) {
           return left.line - right.line;
-        }
-
-        if ((left.column ?? 0) !== (right.column ?? 0)) {
-          return (left.column ?? 0) - (right.column ?? 0);
         }
 
         return left.breakpointId.localeCompare(right.breakpointId);

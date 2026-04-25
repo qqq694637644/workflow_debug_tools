@@ -479,44 +479,58 @@ namespace vl
 					return body;
 				}
 
-				static Ptr<JsonNode> BuildVariablesBody(
-					const WorkflowDebugEnvelope& envelope,
-					WorkflowDebugSessionState* state,
-					WorkflowDebugValueInspector* valueInspector
-				)
-				{
-					auto body = CreateObject();
-					auto threadId = ResolveThreadId(envelope, state);
-					auto frameId = ResolveFrameId(envelope, state);
-					vint variablesReference = 0;
-					auto kind = ResolveScopeKind(envelope, state);
+						static Ptr<JsonNode> BuildVariablesBody(
+							const WorkflowDebugEnvelope& envelope,
+							WorkflowDebugSessionState* state,
+							WorkflowDebugValueInspector* valueInspector
+						)
+						{
+							auto body = CreateObject();
+							vint variablesReference = 0;
 
-					auto bodyObject = ParseJsonObject(envelope.body);
-					if (bodyObject)
-					{
-						TryReadNumberField(bodyObject.Obj(), L"variablesReference", variablesReference);
-					}
+							if (auto bodyObject = ParseJsonObject(envelope.body))
+							{
+								TryReadNumberField(bodyObject.Obj(), L"variablesReference", variablesReference);
+							}
 
-					collections::List<WorkflowDebugVariable> variables;
-					if (valueInspector)
-					{
-						valueInspector->TryGetVariables(threadId, frameId, kind, variables);
-					}
+							auto threadId = ResolveThreadId(envelope, state);
+							auto frameId = ResolveFrameId(envelope, state);
+							auto kind = ResolveScopeKind(envelope, state);
+							collections::List<WorkflowDebugVariable> variables;
 
-					auto array = CreateArray();
-					for (auto variable : variables)
-					{
-						array->items.Add(BuildVariable(variable));
-					}
+							if (valueInspector)
+							{
+								if (variablesReference > 0)
+								{
+									vint resolvedThreadId = 0;
+									vint resolvedFrameId = 0;
+									WorkflowDebugScopeKind resolvedKind = WorkflowDebugScopeKind::Local;
+									if (valueInspector->TryGetVariables(variablesReference, resolvedThreadId, resolvedFrameId, resolvedKind, variables))
+									{
+										threadId = resolvedThreadId;
+										frameId = resolvedFrameId;
+										kind = resolvedKind;
+									}
+								}
+								else
+								{
+									valueInspector->TryGetVariables(threadId, frameId, kind, variables);
+								}
+							}
 
-					AddField(body.Obj(), L"threadId", CreateNumber(threadId));
-					AddField(body.Obj(), L"frameId", CreateNumber(frameId));
-					// 适配器需要把响应里的远程句柄映射回本地句柄，否则后续变量展开会丢失父节点关系。
-					AddField(body.Obj(), L"variablesReference", CreateNumber(variablesReference));
-					AddField(body.Obj(), L"scopeKind", CreateString(ScopeKindToText(kind)));
-					AddField(body.Obj(), L"variables", array);
-					return body;
-				}
+							auto array = CreateArray();
+							for (auto variable : variables)
+							{
+								array->items.Add(BuildVariable(variable));
+							}
+
+							AddField(body.Obj(), L"threadId", CreateNumber(threadId));
+							AddField(body.Obj(), L"frameId", CreateNumber(frameId));
+							AddField(body.Obj(), L"variablesReference", CreateNumber(variablesReference));
+							AddField(body.Obj(), L"scopeKind", CreateString(ScopeKindToText(kind)));
+							AddField(body.Obj(), L"variables", array);
+							return body;
+						}
 
 				static bool SendResponse(
 					const WorkflowDebugEnvelope& request,
@@ -602,17 +616,11 @@ namespace vl
 					AddField(body.Obj(), L"reason", CreateString(snapshot.lastStoppedReason.Length() > 0 ? snapshot.lastStoppedReason : L"pause"));
 					AddField(body.Obj(), L"threadId", CreateNumber(snapshot.lastStoppedThreadId));
 					AddField(body.Obj(), L"frameId", CreateNumber(snapshot.lastStoppedFrameId));
-					AddField(body.Obj(), L"sourceId", CreateNumber(snapshot.lastStoppedSourceId));
-					AddField(body.Obj(), L"row", CreateNumber(snapshot.lastStoppedRow));
-					return body;
-				}
-
-				static Ptr<JsonNode> BuildDisconnectBody(const WString& reason, bool restart)
+				static Ptr<WfJsonDynamic> BuildDisconnectBody(const WString& reason)
 				{
-					auto body = CreateObject();
-					AddField(body.Obj(), L"reason", CreateString(reason.Length() > 0 ? reason : L"会话关闭"));
-					AddField(body.Obj(), L"restart", CreateLiteral(restart));
-					return body;
+					auto disconnectBody = CreateObject();
+					disconnectBody->AddField(L"reason", CreateString(reason.Length() > 0 ? reason : L"会话关闭"));
+					return disconnectBody;
 				}
 
 				static Ptr<JsonNode> BuildExceptionBody(
@@ -856,30 +864,19 @@ if (envelope.command == L"disconnect")
 						return false;
 					}
 
-					WString breakpointId;
-					vint row = -1;
-					vint column = -1;
-					WString condition;
-					WString logMessage;
-					if (!TryReadStringField(breakpointObject, L"breakpointId", breakpointId)
-						|| !TryReadNumberField(breakpointObject, L"row", row))
-					{
-						return false;
-					}
+						WString breakpointId;
+						vint row = -1;
+						if (!TryReadStringField(breakpointObject, L"breakpointId", breakpointId)
+							|| !TryReadNumberField(breakpointObject, L"row", row))
+						{
+							return false;
+						}
 
-					TryReadNumberField(breakpointObject, L"column", column);
-					TryReadStringField(breakpointObject, L"condition", condition);
-					TryReadStringField(breakpointObject, L"logMessage", logMessage);
-
-					WorkflowDebugBreakpointRecord record;
-					record.breakpointId = breakpointId;
-					record.sourcePath = sourcePath;
-					record.codeIndex = codeIndex;
-					record.row = row;
-					record.column = column;
-					record.condition = condition;
-					record.logMessage = logMessage;
-
+						WorkflowDebugBreakpointRecord record;
+						record.breakpointId = breakpointId;
+						record.sourcePath = sourcePath;
+						record.codeIndex = codeIndex;
+						record.row = row;
 					if (!breakpointRegistry)
 					{
 						return false;
@@ -991,49 +988,36 @@ if (envelope.command == L"disconnect")
 				return SendResponse(envelope, state, transport, L"variables", body);
 			}
 
-				bool WorkflowDebugBridge::HandleDisconnect(const WorkflowDebugEnvelope& envelope)
-			{
-				auto body = ParseJsonObject(envelope.body);
-				WString reason = L"disconnect";
-				bool restart = false;
-				if (body)
-				{
-					TryReadStringField(body.Obj(), L"reason", reason);
-					TryReadOptionalBooleanField(body.Obj(), L"restart", restart);
-				}
+						bool WorkflowDebugBridge::HandleDisconnect(const WorkflowDebugEnvelope& envelope)
+						{
+							auto body = ParseJsonObject(envelope.body);
+							WString reason = L"disconnect";
+							if (body)
+							{
+								TryReadStringField(body.Obj(), L"reason", reason);
+							}
 
-				(void)restart;
-				if (runtimeBinding)
-				{
-					auto debugger = runtimeBinding->GetRemoteDebugger();
-					if (debugger)
-					{
-						debugger->RequestStop();
-					}
-				}
+							if (runtimeBinding)
+							{
+								auto debugger = runtimeBinding->GetRemoteDebugger();
+								if (debugger)
+								{
+									debugger->RequestStop();
+								}
+							}
 
-				return NotifyDisconnect(reason, restart);
-			}
+							return NotifyDisconnect(reason);
+						}
 
-			bool WorkflowDebugBridge::NotifyStopped()
-			{
-				return SendEvent(state, transport, L"stopped", BuildStoppedBody(state));
-			}
-
-			bool WorkflowDebugBridge::NotifyOutput(const WString& level, const WString& message)
-			{
-				return SendEvent(state, transport, L"output", BuildOutputBody(level, message));
-			}
-
-			bool WorkflowDebugBridge::NotifyDisconnect(const WString& reason, bool restart)
-			{
-				if (state)
-				{
-					state->SetPhase(WorkflowDebugSessionPhase::Closed);
-				}
-				// 正常结束时先通知适配器，再关闭底层连接，避免 VSCode 把收尾当成异常断开。
-				return SendEvent(state, transport, L"disconnect", BuildDisconnectBody(reason, restart));
-			}
+						bool WorkflowDebugBridge::NotifyDisconnect(const WString& reason)
+						{
+							if (state)
+							{
+								state->SetPhase(WorkflowDebugSessionPhase::Closed);
+							}
+							// Normal termination: notify adapter first to avoid treating teardown as an abnormal disconnect.
+							return SendEvent(state, transport, L"disconnect", BuildDisconnectBody(reason));
+						}
 
 			bool WorkflowDebugBridge::NotifyHello(const WString& runtimeVersion, const collections::List<WorkflowDebugSourceRecord>& sourceMap)
 			{

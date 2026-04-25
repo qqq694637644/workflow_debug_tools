@@ -85,7 +85,10 @@ namespace vl
 
 			/// <summary>
 			/// 变量检查器负责缓存单个暂停现场的变量快照。
-			/// 适配器侧的句柄表会把这些数据再转成 DAP 变量树。
+			///
+			/// 收敛后的约定：
+			/// - Host 为每个 scope 分配稳定的 variablesReference。
+			/// - Adapter 直接透传 variablesReference，不再维护额外的句柄表。
 			/// </summary>
 			class WorkflowDebugValueInspector : public Object
 			{
@@ -93,20 +96,33 @@ namespace vl
 				WorkflowDebugValueInspector();
 				~WorkflowDebugValueInspector();
 
-				void								Clear();
-				void								ClearThread(vint threadId);
+				void							Clear();
+				void							ClearThread(vint threadId);
 
-				void								CaptureFrame(vint threadId, vint frameId, const WorkflowDebugFrameValues& values);
-				bool								TryGetFrame(vint threadId, vint frameId, WorkflowDebugFrameValues& values) const;
-				bool								TryGetScopes(vint threadId, vint frameId, collections::List<WorkflowDebugScope>& scopes) const;
-				bool								TryGetVariables(vint threadId, vint frameId, WorkflowDebugScopeKind kind, collections::List<WorkflowDebugVariable>& variables) const;
+				void							CaptureFrame(vint threadId, vint frameId, const WorkflowDebugFrameValues& values);
+				bool							TryGetFrame(vint threadId, vint frameId, WorkflowDebugFrameValues& values) const;
+				bool							TryGetScopes(vint threadId, vint frameId, collections::List<WorkflowDebugScope>& scopes) const;
+				bool							TryGetVariables(vint threadId, vint frameId, WorkflowDebugScopeKind kind, collections::List<WorkflowDebugVariable>& variables) const;
+
+				/// <summary>
+				/// 通过 variablesReference 获取变量列表，并返回它关联的 threadId/frameId/kind。
+				/// </summary>
+				bool							TryGetVariables(vint variablesReference, vint& threadId, vint& frameId, WorkflowDebugScopeKind& kind, collections::List<WorkflowDebugVariable>& variables) const;
 
 			private:
+				struct ScopeReferenceInfo
+				{
+					vint					threadId = 0;
+					vint					frameId = 0;
+					WorkflowDebugScopeKind	kind = WorkflowDebugScopeKind::Local;
+				};
+
 				collections::Dictionary<WString, WorkflowDebugFrameValues>	framesByKey;
-				mutable collections::Dictionary<WString, vint>				scopeReferences;
+				mutable collections::Dictionary<WString, vint>					scopeReferences;
+				mutable collections::Dictionary<vint, ScopeReferenceInfo>		scopeReferenceInfos;
 				mutable vint												nextScopeReference = 1;
 
-				vint								GetScopeReference(vint threadId, vint frameId, WorkflowDebugScopeKind kind) const;
+				vint							GetScopeReference(vint threadId, vint frameId, WorkflowDebugScopeKind kind) const;
 			};
 		}
 	}

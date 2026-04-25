@@ -5,8 +5,6 @@
   "type": "module",
   "displayName": "Workflow 调试器",
   "description": "Workflow 脚本的 VSCode 调试适配器。",
-  "main": "dist/src/extension.js",
-  "types": "dist/src/index.d.ts",
   "files": [
     "dist/src/**",
     "docs/**",
@@ -18,40 +16,10 @@
   "categories": [
     "Debuggers"
   ],
-  "activationEvents": [
-    "onDebug",
-    "onDebug:workflow"
-  ],
   "contributes": {
     "breakpoints": [
       {
         "language": "plaintext"
-      }
-    ],
-    "commands": [
-      {
-        "command": "workflow.consumeF9",
-        "title": "Workflow: Consume F9"
-      }
-    ],
-    "menus": {
-      "commandPalette": [
-        {
-          "command": "workflow.consumeF9",
-          "when": "false"
-        }
-      ]
-    },
-    "keybindings": [
-      {
-        "command": "editor.debug.action.toggleBreakpoint",
-        "key": "f2",
-        "when": "editorTextFocus && editorLangId == plaintext"
-      },
-      {
-        "command": "workflow.consumeF9",
-        "key": "f9",
-        "when": "editorTextFocus && editorLangId == plaintext"
       }
     ],
     "debuggers": [
@@ -115,8 +83,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node dist/test/sessionMachine.test.js && node dist/test/bridgeTransport.test.js && node dist/test/sourceMapping.test.js && node dist/test/executionControl.test.js && node dist/test/stackTrace.test.js && node dist/test/exceptionPause.test.js && node dist/test/fullFlow.test.js && node dist/test/variableExpansion.test.js && node dist/test/logFormat.test.js && node dist/test/attachTimeout.test.js && node dist/test/shutdownPolicy.test.js && node dist/test/debugAdapterServerHost.test.js && node dist/test/dapAdapter.test.js"
+    "build": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

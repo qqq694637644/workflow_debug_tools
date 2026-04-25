@@ -2,7 +2,6 @@ import { BridgeTransport, type BridgeTransportEndpoint } from './bridgeTransport
 import { normalizeConnectTimeoutMs, waitForOptionalTimeout } from './attachTimeout.js';
 import { AdapterSessionMachine } from './sessionMachine.js';
 import { traceDebugMessage } from './diagnosticTrace.js';
-import { evaluateExpression as evaluateDebugExpression, type EvaluationValue, type ExpressionResolver } from './expressionEvaluator.js';
 import {
   createDapEvent,
   createDapResponse,
@@ -14,8 +13,6 @@ import {
   type DapStackFrame,
   type DapVariable,
   DapMessageReader,
-  type WorkflowEvaluateArguments,
-  type WorkflowEvaluateResponseBody,
   type WorkflowAttachArguments,
   type WorkflowContinueArguments,
   type WorkflowScopesArguments,
@@ -26,8 +23,8 @@ import {
   type WorkflowInitializeArguments,
   type WorkflowConfigurationDoneArguments
 } from './dapProtocol.js';
-import { type ScopeModelEntry, type ScopeModelState } from './scopeModel.js';
-import { type VariableModelEntry, type VariableModelState } from './variableModel.js';
+import { type ScopeModelState } from './scopeModel.js';
+import { type VariableModelState } from './variableModel.js';
 import { DEFAULT_CAPABILITIES, type EventEnvelope, type ProtocolCommand, type ProtocolEnvelope, type RequestEnvelope, type ResponseEnvelope } from './protocol.js';
 import { type BreakpointSyncState, type SourceBreakpointInput } from './breakpointMapper.js';
 
@@ -103,12 +100,11 @@ export function shouldFailPendingRequestsOnShutdown(reason: string): boolean {
 }
 
 function toSourceBreakpoints(breakpoints: ReadonlyArray<DapBreakpoint>): ReadonlyArray<SourceBreakpointInput> {
-  return breakpoints.map((breakpoint) => ({
-    line: breakpoint.line,
-    column: breakpoint.column,
-    condition: breakpoint.condition,
-    logMessage: breakpoint.logMessage
-  }));
+  return breakpoints
+    .filter((breakpoint) => Number.isInteger(breakpoint.line) && breakpoint.line > 0)
+    .map((breakpoint) => ({
+      line: breakpoint.line
+    }));
 }
 
 interface PendingBreakpointBatch {
@@ -237,7 +233,7 @@ export class WorkflowDebugDapServer {
           await this.handleDisconnectRequest(message);
           return;
         case 'restart':
-          await this.handleRestartRequest(message);
+          this.sendErrorResponse(message, '当前版本不支持 restart。');
           return;
         case 'setExceptionBreakpoints':
           this.sendResponse(message, {});
@@ -246,7 +242,7 @@ export class WorkflowDebugDapServer {
           this.sendErrorResponse(message, '当前版本暂不支持暂停请求。');
           return;
         case 'evaluate':
-          await this.handleEvaluateRequest(message);
+          this.sendErrorResponse(message, '当前版本不支持表达式求值。');
           return;
         default:
           this.sendErrorResponse(message, `未实现的 DAP 请求：${message.command}`);
@@ -417,51 +413,31 @@ export class WorkflowDebugDapServer {
     }
 
     const state = await this.loadScopesForFrame(frameIdentity);
-    const scopes = state.scopes.map((scope) => this.toDapScope(scope.name, scope.variablesReference));
+    const scopes = state.scopes;
     this.sendResponse(message, {
       scopes
     });
     this.log(`scopes 返回：frameId=${args.frameId}，作用域数=${scopes.length}。`);
   }
-
   private async handleVariablesRequest(message: DapRequestMessage): Promise<void> {
-    this.requirePaused();
     const args = this.parseVariablesArguments(message.arguments);
-    const handle = this.adapter.getHandleTable().resolve(args.variablesReference);
-    if (!handle) {
-      throw new Error('变量句柄不存在。');
+    const variablesReference = args.variablesReference;
+
+    if (!Number.isInteger(variablesReference) || variablesReference < 0) {
+      this.sendErrorResponse(message, "variablesReference 必须是非负整数。");
+      return;
     }
 
-    const state = await this.loadVariablesForHandle(args.variablesReference);
-    const variables = state.variables.map((variable) => this.toDapVariable(variable.name, variable.value, variable.type, variable.variablesReference, variable.namedVariables, variable.indexedVariables));
-    this.sendResponse(message, {
-      variables
-    });
-    this.log(`variables 返回：variablesReference=${args.variablesReference}，变量数=${variables.length}。`);
-  }
+    if (variablesReference === 0) {
+      this.sendResponse(message, { variables: [] });
+      return;
+    }
 
-  private async handleEvaluateRequest(message: DapRequestMessage): Promise<void> {
-    this.requirePaused();
-    const args = this.parseEvaluateArguments(message.arguments);
-    this.log(
-      `evaluate 开始：context=${args.context ?? 'repl'}，frameId=${args.frameId ?? 'undefined'}，expression=${args.expression}。`
-    );
-    const frameIdentity = await this.resolveEvaluationFrameIdentity(args);
-    const evaluation = await this.evaluateExpression(frameIdentity, args.expression);
-    const response: WorkflowEvaluateResponseBody = {
-      result: evaluation.display,
-      type: evaluation.type,
-      variablesReference: evaluation.variablesReference,
-      namedVariables: evaluation.namedVariables,
-      indexedVariables: evaluation.indexedVariables
-    };
-    this.sendResponse(message, response);
-    this.log(
-      `evaluate 返回：context=${args.context ?? 'repl'}，frameId=${frameIdentity.frameId}，` +
-      `result=${response.result}，type=${response.type ?? 'undefined'}。`
-    );
-  }
+    const modelState = await this.loadVariablesForHandle(variablesReference);
+    const variables = modelState.variables;
 
+    this.sendResponse(message, { variables });
+  }
   private async loadScopesForFrame(frameIdentity: FrameIdentity): Promise<ScopeModelState> {
     const request = this.adapter.createScopes(frameIdentity.frameId);
     const response = await this.sendHostRequest(request);
@@ -474,330 +450,28 @@ export class WorkflowDebugDapServer {
     return this.adapter.receiveVariables(response);
   }
 
-  private async resolveEvaluationFrameIdentity(args: WorkflowEvaluateArguments): Promise<FrameIdentity> {
-    const snapshot = this.adapter.snapshot();
-    const threadId = this.activeThreadId ?? snapshot.lastStoppedThreadId;
-    if (threadId === null) {
-      throw new Error('当前没有可用于求值的暂停线程。');
-    }
-
-    if (typeof args.frameId === 'number') {
-      let frameIdentity = this.frameIdentityById.get(args.frameId);
-      if (!frameIdentity) {
-        await this.ensureStackTraceLoaded(threadId, true);
-        frameIdentity = this.frameIdentityById.get(args.frameId);
-      }
-
-      if (!frameIdentity) {
-        throw new Error('找不到对应的栈帧。');
-      }
-
-      return frameIdentity;
-    }
-
-    await this.ensureStackTraceLoaded(threadId);
-    const topFrame = this.adapter.getStackModel().getFrames(threadId)[0];
-    if (!topFrame) {
-      throw new Error('当前没有可用于求值的栈帧。');
-    }
-
-    return {
-      threadId,
-      frameId: topFrame.frameId
-    };
-  }
-
-  private async ensureStackTraceLoaded(threadId: number, force = false): Promise<void> {
-    const frames = this.adapter.getStackModel().getFrames(threadId);
-    if (!force && frames.length > 0) {
-      return;
-    }
-
-    // 求值经常发生在用户还没展开调用栈的时候，这里主动抓一次调用栈，
-    // 免得 hover / REPL 因为缺少 frame 映射而直接失败。
-    const request = this.adapter.createStackTrace(threadId, 0, 1000);
-    const response = await this.sendHostRequest(request);
-    const state = this.adapter.receiveStackTrace(response);
-    for (const frame of state.frames) {
-      this.getStackFrameId(frame.threadId, frame.frameId);
-    }
-  }
-
-  private async evaluateExpression(frameIdentity: FrameIdentity, expression: string): Promise<EvaluationValue> {
-    const resolver = this.createExpressionResolver(frameIdentity);
-    return evaluateDebugExpression(expression, resolver);
-  }
-
-  private createExpressionResolver(frameIdentity: FrameIdentity): ExpressionResolver {
-    const scopeCache = new Map<string, ScopeModelState>();
-    const variableCache = new Map<number, ReadonlyArray<VariableModelEntry>>();
-
-    return {
-      resolveIdentifier: async (name: string): Promise<EvaluationValue | null> => {
-        const scopeState = await this.getEvaluationScopeState(frameIdentity, scopeCache);
-        this.log(
-          `evaluate 标识符解析：name=${name}，threadId=${frameIdentity.threadId}，frameId=${frameIdentity.frameId}，` +
-          `作用域=${this.describeScopeStateForLog(scopeState)}。`
-        );
-        const scopeOrder: ReadonlyArray<ScopeModelEntry['kind']> = ['Local', 'Argument', 'Captured', 'Global'];
-        for (const kind of scopeOrder) {
-          const scope = scopeState.scopes.find((item) => item.kind === kind);
-          if (!scope || scope.variablesReference <= 0) {
-            continue;
-          }
-
-          const variables = await this.getEvaluationVariables(scope.variablesReference, variableCache);
-          this.log(
-            `evaluate 检查作用域：kind=${kind}，variablesReference=${scope.variablesReference}，` +
-            `变量=${this.describeVariableNamesForLog(variables)}。`
-          );
-          const match = variables.find((variable) => variable.name === name);
-          if (match) {
-            return this.toEvaluationValue(match);
-          }
-        }
-
-        this.log(
-          `evaluate 标识符未命中：name=${name}，threadId=${frameIdentity.threadId}，frameId=${frameIdentity.frameId}。`
-        );
-        return null;
-      },
-      resolveMember: async (target: EvaluationValue, propertyName: string): Promise<EvaluationValue | null> => {
-        if (target.kind === 'primitive' && typeof target.value === 'string') {
-          if (propertyName === 'length') {
-            return this.createPrimitiveEvaluationValue(target.value.length, 'number');
-          }
-
-          const index = Number.parseInt(propertyName, 10);
-          if (Number.isInteger(index) && index >= 0 && String(index) === propertyName) {
-            const characters = Array.from(target.value);
-            if (index < characters.length) {
-              return this.createPrimitiveEvaluationValue(characters[index], 'string');
-            }
-            return this.createPrimitiveEvaluationValue(undefined, 'undefined');
-          }
-        }
-
-        if (target.kind !== 'object' || target.variablesReference <= 0) {
-          return null;
-        }
-
-        const variables = await this.getEvaluationVariables(target.variablesReference, variableCache);
-        const match = variables.find((variable) => variable.name === propertyName);
-        return match ? this.toEvaluationValue(match) : null;
-      }
-    };
-  }
-
-  private async getEvaluationScopeState(
-    frameIdentity: FrameIdentity,
-    scopeCache: Map<string, ScopeModelState>
-  ): Promise<ScopeModelState> {
-    const key = `${frameIdentity.threadId}:${frameIdentity.frameId}`;
-    const cached = scopeCache.get(key);
-    if (cached) {
-      this.log(
-        `evaluate 复用作用域快照：threadId=${frameIdentity.threadId}，frameId=${frameIdentity.frameId}，` +
-        `作用域=${this.describeScopeStateForLog(cached)}。`
-      );
-      return cached;
-    }
-
-    const state = await this.loadScopesForFrame(frameIdentity);
-    scopeCache.set(key, state);
-    this.log(
-      `evaluate 加载作用域快照：threadId=${frameIdentity.threadId}，frameId=${frameIdentity.frameId}，` +
-      `作用域=${this.describeScopeStateForLog(state)}。`
-    );
-    return state;
-  }
-
-  private async getEvaluationVariables(
-    variablesReference: number,
-    variableCache: Map<number, ReadonlyArray<VariableModelEntry>>
-  ): Promise<ReadonlyArray<VariableModelEntry>> {
-    const cached = variableCache.get(variablesReference);
-    if (cached) {
-      this.log(
-        `evaluate 复用变量快照：variablesReference=${variablesReference}，变量=${this.describeVariableNamesForLog(cached)}。`
-      );
-      return cached;
-    }
-
-    const state = await this.loadVariablesForHandle(variablesReference);
-    variableCache.set(variablesReference, state.variables);
-    this.log(
-      `evaluate 加载变量快照：variablesReference=${variablesReference}，变量=${this.describeVariableNamesForLog(state.variables)}。`
-    );
-    return state.variables;
-  }
-
-  private describeScopeStateForLog(state: ScopeModelState): string {
-    if (state.scopes.length === 0) {
-      return '[]';
-    }
-
-    return `[${state.scopes.map((scope) => `${scope.kind}:${scope.variablesReference}`).join(', ')}]`;
-  }
-
-  private describeVariableNamesForLog(variables: ReadonlyArray<VariableModelEntry>, limit = 8): string {
-    if (variables.length === 0) {
-      return '[]';
-    }
-
-    const names = variables.slice(0, limit).map((variable) => variable.name);
-    const suffix = variables.length > limit ? ', ...' : '';
-    return `[${names.join(', ')}${suffix}]`;
-  }
-
-  private createPrimitiveEvaluationValue(value: string | number | boolean | null | undefined, type?: string): EvaluationValue {
-    return {
-      kind: 'primitive',
-      value,
-      display: this.formatPrimitiveDisplayValue(value),
-      type: type ?? this.inferPrimitiveType(value),
-      variablesReference: 0,
-      namedVariables: 0,
-      indexedVariables: 0
-    };
-  }
-
-  private toEvaluationValue(entry: VariableModelEntry): EvaluationValue {
-    const type = entry.type.trim().length > 0 ? entry.type.trim() : this.inferTypeFromValue(entry.value);
-    if (entry.variablesReference > 0) {
-      return {
-        kind: 'object',
-        value: undefined,
-        display: entry.value,
-        type,
-        variablesReference: entry.variablesReference,
-        namedVariables: entry.namedVariables,
-        indexedVariables: entry.indexedVariables
-      };
-    }
-
-    return {
-      kind: 'primitive',
-      value: this.parsePrimitiveValue(entry.value, type),
-      display: entry.value,
-      type,
-      variablesReference: 0,
-      namedVariables: 0,
-      indexedVariables: 0
-    };
-  }
-
-  private parsePrimitiveValue(value: string, declaredType: string): string | number | boolean | null | undefined {
-    const normalizedType = declaredType.trim().toLowerCase();
-    if (normalizedType === 'string') {
-      return value;
-    }
-
-    if (normalizedType === 'boolean') {
-      if (value === 'true') {
-        return true;
-      }
-
-      if (value === 'false') {
-        return false;
-      }
-    }
-
-    if (normalizedType === 'number' || normalizedType === 'int' || normalizedType === 'integer' || normalizedType === 'float' || normalizedType === 'double' || normalizedType === 'long' || normalizedType === 'short' || normalizedType === 'byte') {
-      const parsed = Number(value);
-      if (!Number.isNaN(parsed)) {
-        return parsed;
-      }
-    }
-
-    if (normalizedType === 'null') {
-      return null;
-    }
-
-    if (normalizedType === 'undefined') {
-      return undefined;
-    }
-
-    if (value === 'true') {
-      return true;
-    }
-
-    if (value === 'false') {
-      return false;
-    }
-
-    if (value === 'null') {
-      return null;
-    }
-
-    if (value === 'undefined') {
-      return undefined;
-    }
-
-    const numeric = Number(value);
-    if (!Number.isNaN(numeric) && value.trim().length > 0) {
-      return numeric;
-    }
-
-    return value;
-  }
-
-  private inferTypeFromValue(value: string): string {
-    const parsed = this.parsePrimitiveValue(value, '');
-    return this.inferPrimitiveType(parsed);
-  }
-
-  private inferPrimitiveType(value: string | number | boolean | null | undefined): string {
-    if (value === null) {
-      return 'null';
-    }
-
-    if (value === undefined) {
-      return 'undefined';
-    }
-
-    return typeof value;
-  }
-
-  private formatPrimitiveDisplayValue(value: string | number | boolean | null | undefined): string {
-    if (value === null) {
-      return 'null';
-    }
-
-    if (value === undefined) {
-      return 'undefined';
-    }
-
-    return String(value);
-  }
-
   private async handleDisconnectRequest(message: DapRequestMessage): Promise<void> {
     this.log('收到 disconnect。');
     const sessionAlreadyClosed = this.adapter.snapshot().phase === 'closed';
     this.gracefulClose = true;
     this.terminated = true;
-    const restart = this.parseBooleanArgument(message.arguments, 'restart', false);
+
     if (!sessionAlreadyClosed) {
-      await this.requestHostDisconnect(restart ? 'restart' : 'disconnect', restart);
-    }
-    else {
+      await this.requestHostDisconnect('disconnect');
+    } else {
       this.log('宿主已经关闭调试会话，跳过反向下发 disconnect。');
     }
+
     this.sendResponse(message, {});
+
     if (!sessionAlreadyClosed) {
-      this.sendEvent('terminated', {
-        restart
-      });
+      this.sendEvent('terminated', {});
     }
+
     this.cancelReadyWait();
     void this.disposeTransport();
   }
 
-  private async handleRestartRequest(message: DapRequestMessage): Promise<void> {
-    this.log('收到 restart。');
-    this.sendResponse(message, {});
-    this.log('restartRequest 当前保持为兼容 LuaPanda 的空操作，不主动终结会话。');
-  }
 
   private installTransportHandlers(transport: BridgeTransport<ProtocolEnvelope>): void {
     transport.onOpen(() => {
@@ -938,17 +612,14 @@ export class WorkflowDebugDapServer {
         return;
       }
 
-      if (message.type === 'event' && message.cmd === 'disconnect') {
-        this.adapter.receiveDisconnect(message as EventEnvelope<'disconnect'>);
-        const disconnectBody = message as EventEnvelope<'disconnect'>;
-        this.log(`收到宿主断开事件：reason=${disconnectBody.body.reason} restart=${disconnectBody.body.restart}。`);
-        if (!this.gracefulClose && !this.terminated) {
-          this.terminated = true;
-          this.sendEvent('terminated', {
-            restart: disconnectBody.body.restart
-          });
-        }
+      if (message.cmd === "disconnect") {
+        const disconnectBody = message as EventEnvelope<"disconnect">;
+        this.log("收到宿主断开事件：reason=" + disconnectBody.body.reason + "。");
+        this.gracefulClose = true;
+        this.terminated = true;
+        this.sendEvent("terminated", {});
         this.cancelReadyWait();
+        void this.disposeTransport();
         return;
       }
     }
@@ -980,17 +651,18 @@ export class WorkflowDebugDapServer {
     await transport.send(request);
   }
 
-  private async requestHostDisconnect(reason: string, restart: boolean): Promise<void> {
+  private async requestHostDisconnect(reason: string): Promise<void> {
     if (!this.transport) {
       return;
     }
 
     try {
-      await this.sendHostCommand(this.adapter.createDisconnect(reason, restart));
-      this.log(`已向宿主下发 disconnect：reason=${reason} restart=${restart}。`);
+      await this.sendHostCommand(this.adapter.createDisconnect(reason));
+      this.log("已向宿主下发 disconnect：reason=" + reason + "。");
     }
     catch (error) {
-      this.log(`向宿主下发 disconnect 失败：${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      this.log("向宿主下发 disconnect 失败：" + detail);
     }
   }
 
@@ -999,7 +671,7 @@ export class WorkflowDebugDapServer {
       supportsConfigurationDoneRequest: true,
       supportsContinueOnTerminateRequest: false,
       supportsVariableType: true,
-      supportsEvaluateForHovers: true,
+      supportsEvaluateForHovers: false,
       supportsFunctionBreakpoints: false,
       supportsConditionalBreakpoints: false,
       supportsHitConditionalBreakpoints: false,
@@ -1008,7 +680,7 @@ export class WorkflowDebugDapServer {
       supportsStepBack: false,
       supportsStepOut: true,
       supportsStepInTargetsRequest: false,
-      supportsRestartRequest: true,
+      supportsRestartRequest: false,
       supportsTerminateRequest: true,
       supportsThreadsRequest: true,
       supportsStackTraceRequest: true,
@@ -1098,9 +770,6 @@ export class WorkflowDebugDapServer {
   private toDapBreakpoint(state: BreakpointSyncState): DapBreakpoint & { readonly verified?: boolean; readonly message?: string } {
     return {
       line: state.line,
-      column: state.column,
-      condition: state.condition,
-      logMessage: state.logMessage,
       verified: state.verified ?? false,
       message: state.reason
     };
@@ -1248,21 +917,7 @@ export class WorkflowDebugDapServer {
           throw new Error('断点行号必须从 1 开始。');
         }
         const line = breakpoint.line;
-        const column = typeof breakpoint.column === 'number' && Number.isInteger(breakpoint.column) && breakpoint.column > 0
-          ? breakpoint.column
-          : undefined;
-        const condition = typeof breakpoint.condition === 'string' && breakpoint.condition.trim().length > 0
-          ? breakpoint.condition
-          : undefined;
-        const logMessage = typeof breakpoint.logMessage === 'string' && breakpoint.logMessage.trim().length > 0
-          ? breakpoint.logMessage
-          : undefined;
-        return {
-          line,
-          column,
-          condition,
-          logMessage
-        };
+        return { line };
       })
       : [];
 
@@ -1341,31 +996,6 @@ export class WorkflowDebugDapServer {
 
     return {
       variablesReference: record.variablesReference
-    };
-  }
-
-  private parseEvaluateArguments(args: unknown): WorkflowEvaluateArguments {
-    if (typeof args !== 'object' || args === null) {
-      throw new Error('evaluate 请求必须携带参数。');
-    }
-
-    const record = args as Record<string, unknown>;
-    const expression = typeof record.expression === 'string' ? record.expression.trim() : '';
-    if (!expression) {
-      throw new Error('evaluate 必须携带非空表达式。');
-    }
-
-    const frameId = typeof record.frameId === 'number' && Number.isInteger(record.frameId) && record.frameId > 0
-      ? record.frameId
-      : undefined;
-    const context = typeof record.context === 'string' && record.context.trim().length > 0
-      ? record.context.trim()
-      : undefined;
-
-    return {
-      expression,
-      frameId,
-      context
     };
   }
 

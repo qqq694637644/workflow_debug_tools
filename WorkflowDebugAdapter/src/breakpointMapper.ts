@@ -5,11 +5,9 @@ import {
 } from './protocol.js';
 import { SourceCatalog } from './sourceMap.js';
 
+// 本阶段仅支持“行断点”。
 export interface SourceBreakpointInput {
   readonly line: number;
-  readonly column?: number;
-  readonly condition?: string;
-  readonly logMessage?: string;
 }
 
 export interface BreakpointSyncState {
@@ -19,9 +17,6 @@ export interface BreakpointSyncState {
   readonly codeIndex: number;
   readonly line: number;
   readonly row: number;
-  readonly column?: number;
-  readonly condition?: string;
-  readonly logMessage?: string;
   readonly verified: boolean | null;
   readonly reason?: string;
 }
@@ -60,18 +55,11 @@ export function createBreakpointIdFactory(prefix = 'wf-bp'): BreakpointIdFactory
   };
 }
 
-function createFingerprint(
-  sourcePath: string,
-  codeIndex: number,
-  breakpoint: SourceBreakpointInput
-): string {
+function createFingerprint(sourcePath: string, codeIndex: number, breakpoint: SourceBreakpointInput): string {
   return JSON.stringify({
     sourcePath,
     codeIndex,
-    line: breakpoint.line,
-    column: breakpoint.column ?? null,
-    condition: breakpoint.condition ?? null,
-    logMessage: breakpoint.logMessage ?? null
+    line: breakpoint.line
   });
 }
 
@@ -100,10 +88,7 @@ export function mapBreakpoints(
 
     remoteBreakpoints.push({
       breakpointId,
-      row,
-      column: breakpoint.column,
-      condition: breakpoint.condition,
-      logMessage: breakpoint.logMessage
+      row
     });
 
     states.push({
@@ -113,9 +98,6 @@ export function mapBreakpoints(
       codeIndex: source.codeIndex,
       line: breakpoint.line,
       row,
-      column: breakpoint.column,
-      condition: breakpoint.condition,
-      logMessage: breakpoint.logMessage,
       verified: null
     });
   }

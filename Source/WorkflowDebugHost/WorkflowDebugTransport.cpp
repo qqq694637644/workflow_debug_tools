@@ -208,7 +208,7 @@ namespace vl
 					}
 
 					WString kindText;
-					if (!TryReadStringField(object, L"type", kindText) && !TryReadStringField(object, L"kind", kindText))
+					if (!TryReadStringField(object, L"type", kindText))
 					{
 						return false;
 					}
@@ -232,7 +232,7 @@ namespace vl
 						return false;
 					}
 
-					if (!TryReadStringField(object, L"cmd", envelope.command) && !TryReadStringField(object, L"command", envelope.command))
+					if (!TryReadStringField(object, L"cmd", envelope.command))
 					{
 						return false;
 					}

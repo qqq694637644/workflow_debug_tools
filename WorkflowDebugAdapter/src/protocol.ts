@@ -24,15 +24,13 @@ export type ProtocolCommand =
   | 'stackTrace'
   | 'scopes'
   | 'variables'
-  | 'evaluate'
   | 'continue'
   | 'next'
   | 'stepIn'
   | 'stepOut'
   | 'exception'
   | 'output'
-  | 'disconnect'
-  | 'error';
+  | 'disconnect';
 
 export interface CapabilitySet {
   readonly supportsRemoteAttach: boolean;
@@ -71,12 +69,10 @@ export interface PathMappingRule {
   readonly remotePath: string;
 }
 
+// 本阶段只支持“行断点”，不支持列断点/条件断点/logpoint。
 export interface BreakpointSpec {
   readonly breakpointId: string;
   readonly row: number;
-  readonly column?: number;
-  readonly condition?: string;
-  readonly logMessage?: string;
 }
 
 export interface HelloBody {
@@ -171,15 +167,9 @@ export interface ScopesBody {
 
 export interface VariablesBody {
   readonly variablesReference: number;
-  readonly scopeKind: ScopeKind;
-  readonly frameId: number;
+  readonly scopeKind?: ScopeKind;
+  readonly frameId?: number;
   readonly variables?: ReadonlyArray<VariableEntryBody>;
-}
-
-export interface EvaluateBody {
-  readonly expression: string;
-  readonly frameId: number;
-  readonly scopeKind: ScopeKind;
 }
 
 export interface ContinueBody {
@@ -203,13 +193,6 @@ export interface OutputBody {
 
 export interface DisconnectBody {
   readonly reason: string;
-  readonly restart: boolean;
-}
-
-export interface ErrorBody {
-  readonly code: string;
-  readonly message: string;
-  readonly details?: string;
 }
 
 export interface ProtocolCommandMap {
@@ -222,7 +205,6 @@ export interface ProtocolCommandMap {
   readonly stackTrace: StackTraceBody;
   readonly scopes: ScopesBody;
   readonly variables: VariablesBody;
-  readonly evaluate: EvaluateBody;
   readonly continue: ContinueBody;
   readonly next: StepBody;
   readonly stepIn: StepBody;
@@ -230,7 +212,6 @@ export interface ProtocolCommandMap {
   readonly exception: ExceptionBody;
   readonly output: OutputBody;
   readonly disconnect: DisconnectBody;
-  readonly error: ErrorBody;
 }
 
 export interface EnvelopeBase<TType extends MessageType, TCommand extends ProtocolCommand> {

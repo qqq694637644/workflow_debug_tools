@@ -19,16 +19,13 @@ namespace vl
 	{
 		namespace debughost
 		{
+			// Remote debug: only keep line breakpoints.
 			struct WorkflowDebugBreakpointRecord
 			{
 				WString		breakpointId;
 				WString		sourcePath;
 				vint		codeIndex = -1;
 				vint		row = 0;
-				vint		column = -1;
-				bool		beforeCodegen = true;
-				WString		condition;
-				WString		logMessage;
 				bool		verified = false;
 				WString		reason;
 			};
@@ -42,17 +39,17 @@ namespace vl
 				explicit WorkflowDebugBreakpointRegistry(WorkflowDebugSourceCatalog* sourceCatalog = nullptr);
 				~WorkflowDebugBreakpointRegistry();
 
-				void								SetSourceCatalog(WorkflowDebugSourceCatalog* sourceCatalog);
-				void								Clear();
-				void								ClearSource(const WString& sourcePath);
-				vint								Count() const;
+				void							SetSourceCatalog(WorkflowDebugSourceCatalog* sourceCatalog);
+				void							Clear();
+				void							ClearSource(const WString& sourcePath);
+				vint							Count() const;
 
-				vint								RegisterBreakpoint(const WorkflowDebugBreakpointRecord& breakpoint);
-				bool								HasBreakpoint(vint codeIndex, vint row) const;
+				vint							RegisterBreakpoint(const WorkflowDebugBreakpointRecord& breakpoint);
+				bool							HasBreakpoint(vint codeIndex, vint row) const;
 				const collections::List<WorkflowDebugBreakpointRecord>&	GetBreakpoints() const;
 
 			private:
-				WorkflowDebugSourceCatalog*			sourceCatalog = nullptr;
+				WorkflowDebugSourceCatalog*							sourceCatalog = nullptr;
 				collections::List<WorkflowDebugBreakpointRecord>	breakpoints;
 			};
 		}

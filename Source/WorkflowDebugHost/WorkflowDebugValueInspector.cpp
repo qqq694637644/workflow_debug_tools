@@ -57,6 +57,7 @@ namespace vl
 			{
 				framesByKey.Clear();
 				scopeReferences.Clear();
+					scopeReferenceInfos.Clear();
 				nextScopeReference = 1;
 			}
 
@@ -91,6 +92,20 @@ namespace vl
 				{
 					scopeReferences.Remove(key);
 				}
+					// Remove scope reference infos for this thread.
+					collections::List<vint> refsToRemove;
+					for (auto ref : scopeReferenceInfos.Keys())
+					{
+						ScopeReferenceInfo info;
+						if (scopeReferenceInfos.TryGetValue(ref, info) && info.threadId == threadId)
+						{
+							refsToRemove.Add(ref);
+						}
+					}
+					for (auto ref : refsToRemove)
+					{
+						scopeReferenceInfos.Remove(ref);
+					}
 			}
 
 			void WorkflowDebugValueInspector::CaptureFrame(vint threadId, vint frameId, const WorkflowDebugFrameValues& values)
@@ -120,19 +135,29 @@ namespace vl
 				return false;
 			}
 
-			vint WorkflowDebugValueInspector::GetScopeReference(vint threadId, vint frameId, WorkflowDebugScopeKind kind) const
-			{
-				// 同一暂停现场里，scope 必须有稳定的非零句柄，适配器才会继续向下请求变量。
-				auto key = BuildScopeKey(threadId, frameId, kind);
-				if (auto index = scopeReferences.Keys().IndexOf(key); index != -1)
-				{
-					return scopeReferences.Values()[index];
-				}
+					vint WorkflowDebugValueInspector::GetScopeReference(vint threadId, vint frameId, WorkflowDebugScopeKind kind) const
+					{
+						// A scope must have a stable non-zero variablesReference so the adapter can expand it.
+						auto key = BuildScopeKey(threadId, frameId, kind);
+						vint reference = 0;
+						if (auto index = scopeReferences.Keys().IndexOf(key); index != -1)
+						{
+							reference = scopeReferences.Values()[index];
+						}
+						else
+						{
+							reference = nextScopeReference++;
+							scopeReferences.Set(key, reference);
+						}
 
-				auto reference = nextScopeReference++;
-				scopeReferences.Set(key, reference);
-				return reference;
-			}
+						ScopeReferenceInfo info;
+						info.threadId = threadId;
+						info.frameId = frameId;
+						info.kind = kind;
+						scopeReferenceInfos.Set(reference, info);
+
+						return reference;
+					}
 
 			bool WorkflowDebugValueInspector::TryGetScopes(vint threadId, vint frameId, collections::List<WorkflowDebugScope>& scopes) const
 			{
@@ -208,6 +233,20 @@ namespace vl
 					return false;
 				}
 			}
+				bool WorkflowDebugValueInspector::TryGetVariables(vint variablesReference, vint& threadId, vint& frameId, WorkflowDebugScopeKind& kind, collections::List<WorkflowDebugVariable>& variables) const
+				{
+					ScopeReferenceInfo info;
+					if (!scopeReferenceInfos.TryGetValue(variablesReference, info))
+					{
+						return false;
+					}
+
+					threadId = info.threadId;
+					frameId = info.frameId;
+					kind = info.kind;
+					return TryGetVariables(threadId, frameId, kind, variables);
+				}
+
 		}
 	}
 }

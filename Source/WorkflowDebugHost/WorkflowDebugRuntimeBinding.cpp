@@ -455,7 +455,7 @@ namespace vl
 						continue;
 					}
 
-					auto breakpointIndex = debugger->AddCodeLineBreakPoint(assembly.Obj(), breakpoint.codeIndex, breakpoint.row, breakpoint.beforeCodegen);
+					auto breakpointIndex = debugger->AddCodeLineBreakPoint(assembly.Obj(), breakpoint.codeIndex, breakpoint.row);
 					if (breakpointIndex >= 0)
 					{
 						installedBreakpointIndices.Add(breakpointIndex);
