@@ -1,0 +1,54 @@
+module feature_attributes_rpc;
+using system::*;
+
+/* 属性与 RPC 示例：这里分别覆盖 @cpp:* 生成控制和 @rpc:* 元数据标注。 */
+class AttributeProbe
+{
+	@cpp:Private
+	static func Hidden() : int {}
+
+	@cpp:UserImpl
+	func Describe() : string
+	{
+		return "probe";
+	}
+}
+
+namespace rpcdemo
+{
+	struct Point
+	{
+		x : int;
+		y : int;
+	}
+
+	@rpc:Interface
+	@rpc:Ctor
+	interface IRemoteEcho
+	{
+		func Echo(text : string) : string;
+		func Shift(point : Point) : Point;
+	}
+}
+
+func main() : string
+{
+	var probe = new AttributeProbe^();
+	var service = new (rpcdemo::IRemoteEcho^)
+	{
+		override func Echo(text : string) : string
+		{
+			return text & ":" & probe.Describe();
+		}
+
+		override func Shift(point : rpcdemo::Point) : rpcdemo::Point
+		{
+			return {x : (point.x + 1) y : (point.y + 2)};
+		}
+	};
+
+	var input : rpcdemo::Point = {x:3 y:4};
+	var result = service.Echo("rpc");
+	var shifted : rpcdemo::Point = service.Shift(input);
+	return $"$(result)|$(shifted.x),$(shifted.y)";
+}

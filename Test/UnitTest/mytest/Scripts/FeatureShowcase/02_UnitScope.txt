@@ -1,0 +1,16 @@
+unit feature_unit_scope;
+using system::*;
+
+/* unit 头示例：它和 module 一样可以承载 using 和命名空间，只是入口关键字不同。 */
+namespace unitdemo
+{
+	func Echo(text : string) : string
+	{
+		return text;
+	}
+}
+
+func main() : string
+{
+	return unitdemo::Echo("unit");
+}

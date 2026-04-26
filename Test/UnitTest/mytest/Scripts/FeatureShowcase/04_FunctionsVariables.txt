@@ -1,0 +1,35 @@
+module feature_functions_variables;
+using system::*;
+
+/* 函数与变量示例：顶层变量、重载、匿名函数、ordered lambda 和闭包捕获都在这里。 */
+var gPrefix : string = "G";
+
+func Make(value : string) : string
+{
+	return "S" & value;
+}
+
+func Make(value : int) : string
+{
+	return "N" & $"$(value)";
+}
+
+func main() : string
+{
+	var suffix : string = "X";
+	var captured = func(value : string) : string
+	{
+		return gPrefix & value & suffix;
+	};
+
+	var ordered : func(string, string):string = [$1 & $2];
+	var inferred = func(x : int, y : int) : int
+	{
+		return x + y;
+	};
+
+	gPrefix = "H";
+	suffix = "Y";
+
+	return captured(ordered("A", "B")) & "|" & $"$(inferred(2, 3))" & "|" & Make(1);
+}

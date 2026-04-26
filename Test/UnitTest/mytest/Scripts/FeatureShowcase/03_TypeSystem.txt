@@ -1,0 +1,62 @@
+module feature_type_system;
+using system::*;
+
+/* 类型系统示例：基础类型、指针、可空、函数类型、集合类型和限定名都在这里出现。 */
+class RefBox
+{
+	func Tag() : string
+	{
+		return "RefBox";
+	}
+}
+
+struct Pair
+{
+	x : int;
+	y : int;
+}
+
+namespace typehost
+{
+	class Inner
+	{
+		func Name() : string
+		{
+			return "Inner";
+		}
+	}
+}
+
+func JoinValue(value : int) : string
+{
+	return $"$(value)";
+}
+
+func TouchChar(ch : char) : void
+{
+}
+
+func main() : string
+{
+	var number : int = 7;
+	var floating : float = 2.5;
+	var doubled : double = 3.5;
+	var flag : bool = true;
+	var raw : RefBox* = null;
+	var shared : RefBox^ = new RefBox^();
+	var optional : Pair? = null;
+	var functionType : func(int):string = JoinValue;
+	var list : int[] = {1 2 3};
+	var readonlyList : const int[] = {4 5};
+	var observedList : observe int[] = {6 7};
+	var dictionary : string[int] = {1:"one" 2:"two"};
+	var child : typehost::Inner^ = new typehost::Inner^();
+	var topQualified : ::RefBox^ = new RefBox^();
+	var inferredPoint = {x:8 y:9} of Pair;
+
+	if(number == 7 and floating > 0 and doubled > 0 and flag and raw is null and shared is not null and optional is null and functionType(10) == "10" and list[0] == 1 and readonlyList[1] == 5 and observedList[0] == 6 and dictionary[2] == "two" and child.Name() == "Inner" and topQualified.Tag() == "RefBox" and inferredPoint.x == 8 and inferredPoint.y == 9)
+	{
+		return "types";
+	}
+	return "bad";
+}

@@ -343,6 +343,12 @@ namespace
 		{L"NestedCalls",      L"Scripts\\NestedCalls\\Main.txt",L"多脚本嵌套调用。", NestedCallsExtraFiles, sizeof(NestedCallsExtraFiles) / sizeof(NestedCallsExtraFiles[0])},
 		{L"BindSimple",       L"Scripts\\BindSimple.txt",       L"绑定表达式和观察式更新。"},
 		{L"EvaluatePlayground", L"Scripts\\EvaluatePlayground.txt", L"调试求值、REPL 和 hover 验证。"},
+		// 下面这些场景对应 FeatureShowcase 目录，用来逐项验证脚本语言特性。
+		{L"BindObserve",      L"Scripts\\FeatureShowcase\\09_BindObserve.txt",        L"绑定、observe 和订阅更新。"},
+		{L"Coroutine",        L"Scripts\\FeatureShowcase\\10_Coroutine.txt",          L"原始协程、$Yield、$Async 和 provider。"},
+		{L"StateMachine",     L"Scripts\\FeatureShowcase\\11_StateMachine.txt",       L"状态机、state_input、switch、goto 和 push。"},
+		{L"AttributesRpc",    L"Scripts\\FeatureShowcase\\12_AttributesRpc.txt",      L"@cpp:*、@rpc:* 和 RPC 元数据。"},
+		{L"SemanticValidation", L"Scripts\\FeatureShowcase\\13_SemanticValidation.txt", L"属性、事件和类型校验。"},
 	};
 }
 

@@ -1,0 +1,125 @@
+module feature_declarations;
+using system::*;
+
+/* 声明示例：类、接口、结构体、枚举、位标志、继承、构造/析构、属性和事件都在这里。 */
+struct Pair
+{
+	x : int;
+	y : int;
+}
+
+enum Kind
+{
+	First = 0,
+	Second = 1,
+}
+
+flagenum Mask
+{
+	None = 0,
+	Left = 1,
+	Right = 2,
+	Both = Left | Right,
+}
+
+interface IGreeter
+{
+	func Say() : string;
+}
+
+class Base
+{
+	var name : string = "base";
+
+	new()
+	{
+	}
+
+	func GetName() : string
+	{
+		return name;
+	}
+
+	prop Name : string {GetName}
+
+	static func Hello() : string
+	{
+		return "static";
+	}
+}
+
+class Derived : Base
+{
+	var log : string = "";
+	var score : int = 0;
+
+	new(value : string)
+		: Base()
+	{
+		log = value;
+	}
+
+	delete
+	{
+		log = log & "!";
+	}
+
+	func GetScore() : int
+	{
+		return score;
+	}
+
+	func SetScore(value : int) : void
+	{
+		if(score != value)
+		{
+			score = value;
+			ScoreChanged();
+		}
+	}
+
+	event ScoreChanged();
+
+	prop Score : int {GetScore, SetScore : ScoreChanged}
+	prop Title : string = "workflow" {}
+
+	func Describe() : string
+	{
+		return Base::Hello() & "-" & Name & "-" & Title & "-" & log;
+	}
+
+	static func Join(left : string, right : string) : string
+	{
+		return left & right;
+	}
+}
+
+func main() : string
+{
+	var pair = {x:1 y:2} of Pair;
+	var kind = Kind::Second;
+	var mask = Mask::Left | Mask::Right;
+	var greeter = new IGreeter^
+	{
+		override func Say() : string
+		{
+			return "hello";
+		}
+	};
+
+	var derived = new Derived^("ctor");
+	var trace = {""};
+	var handler = attach(derived.ScoreChanged, func() : void
+	{
+		trace[0] = trace[0] & $"$(derived.Score)";
+	});
+
+	derived.Score = 7;
+	detach(derived.ScoreChanged, handler);
+
+	if(pair.x == 1 and pair.y == 2 and kind == Kind::Second and mask == Mask::Both and greeter.Say() == "hello" and derived.Describe() == "static-base-workflow-ctor" and trace[0] == "7")
+	{
+		return "decl";
+	}
+	return "bad";
+}

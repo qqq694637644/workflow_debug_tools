@@ -1,0 +1,47 @@
+module feature_semantic_validation;
+using system::*;
+
+/* 语义校验示例：这里保留一组类型、属性和事件的正确写法。 */
+class SemanticProbe
+{
+	var value : int = 0;
+	event ValueChanged();
+
+	func GetValue() : int
+	{
+		return value;
+	}
+
+	func SetValue(newValue : int) : void
+	{
+		if(value != newValue)
+		{
+			value = newValue;
+			ValueChanged();
+		}
+	}
+
+	prop Value : int {GetValue, SetValue : ValueChanged}
+
+	func Describe() : string
+	{
+		return $"probe:$(value)";
+	}
+}
+
+func main() : string
+{
+	var probe = new SemanticProbe^();
+	var handler = attach(probe.ValueChanged, func() : void
+	{
+	});
+
+	probe.Value = 5;
+	detach(probe.ValueChanged, handler);
+
+	if(probe.Value == 5 and probe.Describe() == "probe:5")
+	{
+		return "semantic";
+	}
+	return "bad";
+}

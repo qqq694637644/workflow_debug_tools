@@ -1,0 +1,69 @@
+module feature_coroutine;
+using system::*;
+
+/* 协程示例：这里同时覆盖原始协程、$Yield、$Async 和自定义 provider。 */
+var trace = "";
+
+$interface IStringAsync : Async<string>;
+
+func BuildEnumerable() : int{}
+${
+	for(i in range [0, 4))
+	{
+		$Yield i;
+	}
+}
+
+func GetStringAsync(x : int) : IStringAsync^
+${
+	trace = $"$(trace)[A$(x)]";
+	return cast string x;
+}
+
+func GetStringAsync2(x : int) : IStringAsync^
+{
+	var future = Future::Create();
+	AsyncScheduler::GetSchedulerForCurrentThread().ExecuteInBackground(func() : void
+	{
+		trace = $"$(trace)[B$(x)]";
+		future.Promise.SendResult(cast string x);
+	});
+
+	return new IStringAsync^(using future of Async^);
+}
+
+func GetMultipleString() : void
+$Async
+{
+	for(i in BuildEnumerable())
+	{
+		var a = $Await GetStringAsync(i);
+		trace = $"$(trace)<$(a)>";
+		var b = $Await GetStringAsync2(i);
+		trace = $"$(trace)<$(b)>";
+		$Await Async::Delay(0);
+		trace = $"$(trace)!";
+	}
+}
+
+func main() : string
+{
+	var coroutine = $coroutine
+	{
+		for(i in range [0, 3))
+		{
+			trace = $"$(trace)[+$(i)]";
+			$pause;
+		}
+	};
+
+	var step = 0;
+	while(coroutine.Status != CoroutineStatus::Stopped)
+	{
+		coroutine.Resume(true, null);
+		trace = $"$(trace)[-$(step)]";
+		step = step + 1;
+	}
+
+	return trace;
+}

@@ -1,0 +1,108 @@
+module feature_expressions;
+using system::*;
+
+/* 表达式示例：字面量、运算、构造、转换、事件表达式和类型查询都集中在这里。 */
+struct Point
+{
+	x : int;
+	y : int;
+}
+
+class Base
+{
+	func Tag() : string
+	{
+		return "Base";
+	}
+}
+
+class Derived : Base
+{
+	event Changed();
+	var value : int = 0;
+
+	func GetValue() : int
+	{
+		return value;
+	}
+
+	func SetValue(newValue : int) : void
+	{
+		if(value != newValue)
+		{
+			value = newValue;
+			Changed();
+		}
+	}
+
+	prop Value : int {GetValue, SetValue : Changed}
+
+	func Tag() : string
+	{
+		return "Derived";
+	}
+}
+
+namespace exprscope
+{
+	class Child
+	{
+		func Name() : string
+		{
+			return "Child";
+		}
+	}
+}
+
+func MakePoint(x : int, y : int) : Point
+{
+	return {x:x y:y} of Point;
+}
+
+func main() : string
+{
+	var n = 1;
+	var fractional = 2.5;
+	var text = $"$(n)$(fractional)";
+	var unary = +n + (-2);
+	var shifts = (1 shl 2) + (8 shr 1);
+	var binary = ((1 + 2) * 3) - (4 / 2) + (5 % 2) + shifts;
+	var logic = (1 < 2) and (2 <= 2);
+	var xorValue = false xor true;
+	var orValue = false or true;
+	var ternary = logic ? "yes" : "no";
+	var failedThen = "ok" ?? "no";
+	var letValue = let x = 2, y = 3 in (x + y);
+	var rangeValue = range [2, 4];
+	var contains = 2 in {1 2 3};
+	var notContains = 4 not in {1 2 3};
+	var point = {x:1 y:2} of Point;
+	var rootPoint : ::Point = {x:3 y:4};
+	var derived = new Derived^();
+	var baseRef : Base^ = derived as Base^;
+	var derivedRef = cast Derived^ baseRef;
+	var isBase = derived is Base;
+	var isNotNull = derived is not null;
+	var typeOfPoint = typeof(::Point);
+	var typeOfExpr = type(point);
+	var child = new exprscope::Child^();
+	var childName = child.Name();
+	var list = {"one" "two" "three"};
+	var dictionary = {1:"first" 2:"second"};
+	var index = list[1];
+	var mapping = dictionary[2];
+	var trace = {""};
+	var handler = attach(derived.Changed, func() : void
+	{
+		trace[0] = trace[0] & "!";
+	});
+
+	derived.Value = 10;
+	detach(derived.Changed, handler);
+
+	if(binary == 16 and logic and xorValue and orValue and ternary == "yes" and failedThen == "ok" and letValue == 5 and rangeValue[0] == 2 and contains and notContains and point.x == 1 and point.y == 2 and rootPoint.x == 3 and rootPoint.y == 4 and derivedRef.Tag() == "Derived" and isBase and isNotNull and childName == "Child" and index == "two" and mapping == "second" and trace[0] == "!")
+	{
+		return $"$(text)|$(unary)|$(derived.Value)|$(typeOfExpr)";
+	}
+	return "bad";
+}

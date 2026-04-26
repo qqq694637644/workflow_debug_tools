@@ -1,0 +1,58 @@
+module feature_bind_observe;
+using system::*;
+
+/* 绑定与观察示例：这里直接使用仓库里已验证的嵌套 observe 结构。 */
+class ObservableValue
+{
+	var value : int = 0;
+	event ValueChanged(int, int);
+
+	new(_value : int)
+	{
+		value = _value;
+	}
+
+	func GetValue() : int
+	{
+		return value;
+	}
+
+	func SetValue(newValue : int) : void
+	{
+		var oldValue = value;
+		value = newValue;
+		ValueChanged(oldValue, newValue);
+	}
+
+	prop Value : int {GetValue, SetValue : ValueChanged}
+}
+
+var s = "";
+
+func main() : string
+{
+	var x = new ObservableValue^(0);
+	var y = new ObservableValue^(0);
+	var z = new ObservableValue^(0);
+	var subscription = bind(
+		x.observe as _x(
+			_x.Value + y.observe as _y(
+				_y.Value + z.observe as _z(
+					_z.Value
+					on _z.ValueChanged)
+				on _y.ValueChanged)
+			on _x.ValueChanged)
+		);
+	subscription.Open();
+	attach(subscription.ValueChanged, func(value : object) : void
+	{
+		s = $"$(s)[$(cast int value)]";
+	});
+
+	x.Value = 10;
+	y.Value = 20;
+	z.Value = 30;
+
+	subscription.Close();
+	return s;
+}

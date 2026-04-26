@@ -1,0 +1,100 @@
+module feature_statements;
+using system::*;
+
+/* 语句示例：if、switch、while、for、goto、break、continue、delete、raise 和 try/catch/finally。 */
+enum Branch
+{
+	First = 0,
+	Second = 1,
+}
+
+class RawBox
+{
+	new*()
+	{
+	}
+
+	delete
+	{
+	}
+}
+
+func main() : string
+{
+	var text = "";
+
+	if(var message : string? = "ok")
+	{
+		text = text & message;
+	}
+	else
+	{
+		text = text & "bad";
+	}
+
+	switch(Branch::First)
+	{
+	case Branch::First:
+		{
+			text = text & "A";
+		}
+	case Branch::Second:
+		{
+			text = text & "B";
+		}
+	default:
+		{
+			text = text & "C";
+		}
+	}
+
+	var sum = 0;
+	for(x in range [2, 4])
+	{
+		if(x == 2)
+		{
+			continue;
+		}
+		sum = sum + x;
+	}
+
+	var reverseText = "";
+	for(x in reversed {1 2 3})
+	{
+		reverseText = reverseText & $"$(x)";
+	}
+
+	var whileCount = 0;
+	while(whileCount < 3)
+	{
+		whileCount = whileCount + 1;
+		if(whileCount == 2)
+		{
+			break;
+		}
+	}
+
+	{
+		goto Done;
+		text = text & "X";
+Done:;
+	}
+
+	try
+	{
+		raise "E";
+	}
+	catch(ex)
+	{
+		text = text & ex.Message;
+	}
+	finally
+	{
+		text = text & "F";
+	}
+
+	var raw = new RawBox*();
+	delete raw;
+
+	return $"$(text)|$(sum)|$(reverseText)|$(whileCount)";
+}

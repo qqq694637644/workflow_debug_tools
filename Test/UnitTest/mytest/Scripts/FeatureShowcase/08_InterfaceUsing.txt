@@ -1,0 +1,26 @@
+module feature_interface_using;
+using system::*;
+
+/* 接口转发示例：new TYPE(using OBJECT) 会把调用转发给已有接口对象。 */
+interface ISpeaker
+{
+	func Speak() : string;
+}
+
+interface IForwarder : ISpeaker
+{
+}
+
+func main() : string
+{
+	var speaker = new ISpeaker^
+	{
+		override func Speak() : string
+		{
+			return "forward";
+		}
+	};
+
+	var forwarder = new IForwarder^(using speaker);
+	return forwarder.Speak();
+}

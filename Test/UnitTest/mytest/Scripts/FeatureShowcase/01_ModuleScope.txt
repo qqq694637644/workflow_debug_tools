@@ -1,0 +1,36 @@
+module feature_module_scope;
+using system::*;
+
+/* 模块与作用域示例：这里同时演示 module 头、using 导入、嵌套命名空间和静态初始化。 */
+var gModuleReady : bool = false;
+var gNamespaceReady : bool = false;
+
+static
+{
+	gModuleReady = true;
+}
+
+namespace outer
+{
+	static
+	{
+		gNamespaceReady = true;
+	}
+
+	namespace inner
+	{
+		func Echo(text : string) : string
+		{
+			return text;
+		}
+	}
+}
+
+func main() : string
+{
+	if(gModuleReady and gNamespaceReady)
+	{
+		return outer::inner::Echo("scope");
+	}
+	return "bad";
+}
